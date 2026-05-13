@@ -64,6 +64,8 @@ export const createRoundSchema = z
   })
   .strict();
 
+export type CreateRoundDto = z.infer<typeof createRoundSchema>;
+
 export const patchRoundSchema = z
   .object({
     opens_at: z.string().datetime().optional(),
@@ -73,12 +75,16 @@ export const patchRoundSchema = z
   })
   .strict();
 
+export type PatchRoundDto = z.infer<typeof patchRoundSchema>;
+
 export const postResultSchema = z
   .object({
     round_id: z.string().min(1),
     result_6d: result6dSchema
   })
   .strict();
+
+export type PostResultDto = z.infer<typeof postResultSchema>;
 
 export const createManualUserSchema = z
   .object({
@@ -88,6 +94,8 @@ export const createManualUserSchema = z
   })
   .strict();
 
+export type CreateManualUserDto = z.infer<typeof createManualUserSchema>;
+
 export const manualCreditChangeSchema = z
   .object({
     manual_user_id: z.string().min(1),
@@ -96,6 +104,8 @@ export const manualCreditChangeSchema = z
   })
   .strict();
 
+export type ManualCreditChangeDto = z.infer<typeof manualCreditChangeSchema>;
+
 export const quoteItemSchema = z
   .object({
     bet_type: z.enum(betTypeCodes),
@@ -103,6 +113,8 @@ export const quoteItemSchema = z
     stake: z.number().positive()
   })
   .strict();
+
+export type QuoteItemDto = z.infer<typeof quoteItemSchema>;
 
 export const createQuoteSchema = z
   .object({
@@ -117,11 +129,15 @@ export const createQuoteSchema = z
   })
   .strict();
 
+export type CreateQuoteDto = z.infer<typeof createQuoteSchema>;
+
 export const confirmTicketSchema = z
   .object({
     quote_id: z.string().min(1)
   })
   .strict();
+
+export type ConfirmTicketDto = z.infer<typeof confirmTicketSchema>;
 
 export const checkTicketSchema = z
   .object({
@@ -129,6 +145,8 @@ export const checkTicketSchema = z
     public_check_token: z.string().min(1)
   })
   .strict();
+
+export type CheckTicketDto = z.infer<typeof checkTicketSchema>;
 
 export const adminManualTicketSchema = z
   .object({
@@ -140,6 +158,8 @@ export const adminManualTicketSchema = z
     note: z.string().min(1).max(512).optional()
   })
   .strict();
+
+export type AdminManualTicketDto = z.infer<typeof adminManualTicketSchema>;
 
 export function assertRoundTimeOrder(opensAt: string, closesAt: string, drawsAt: string): void {
   if (!(Date.parse(opensAt) < Date.parse(closesAt) && Date.parse(closesAt) <= Date.parse(drawsAt))) {

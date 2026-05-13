@@ -50,6 +50,33 @@ describe("lottery-api P0 foundation", () => {
     const response = await request(app.getHttpServer()).get("/");
     expect(response.status).toBe(200);
     expect(response.text).toContain("Lottery Game Engine Demo");
+    expect(response.text).toContain("/demo/project-overview");
+  });
+
+  it("GET /demo/project-overview returns the project overview page", async () => {
+    const response = await request(app.getHttpServer()).get("/demo/project-overview");
+    expect(response.status).toBe(200);
+    expect(response.text).toContain("ภาพรวมโปรเจกต์ Lottery Game Engine");
+    expect(response.text).toContain("Current System Status");
+    expect(response.text).toContain("Completed Work");
+    expect(response.text).toContain("Remaining Work");
+    expect(response.text).toContain("API Inventory");
+    expect(response.text).toContain("Local Commands");
+    expect(response.text).toContain("Important Safety Notes");
+    expect(response.text).toContain("Phase 0");
+    expect(response.text).toContain("Phase 0.5");
+    expect(response.text).toContain("Phase 1.0");
+    expect(response.text).toContain("Phase 1.1");
+    expect(response.text).toContain("Phase 1.2");
+    expect(response.text).toContain("Phase 1.5");
+    expect(response.text).toContain("Phase 1.6");
+    expect(response.text).toContain("Phase 2.0");
+    expect(response.text).toContain("Phase 2.1");
+    expect(response.text).toContain("Phase 2.2");
+    expect(response.text).toContain("Phase 3.0");
+    expect(response.text).toContain("Done");
+    expect(response.text).toContain("Current");
+    expect(response.text).toContain("Remaining");
   });
 
   it("GET /demo/customer-th returns the Thai customer demo page", async () => {

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Post } from "@nestjs/common";
-import { postResultSchema } from "@lottery/domain";
+import { postResultSchema, type PostResultDto } from "@lottery/domain";
 import { parseBody } from "../common/zod.js";
 import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { ResultsService } from "./results.service.js";
@@ -18,7 +18,7 @@ export class ResultsController {
 
   @Post("/v1/admin/results")
   post(@Body() body: unknown, @Headers("idempotency-key") key: string | undefined, @Headers("x-admin-id") actorId: string) {
-    const dto = parseBody(postResultSchema, body);
+    const dto: PostResultDto = parseBody(postResultSchema, body);
     return this.idempotency.run({
       scope: "admin:results:post",
       actorRef: actorId,
