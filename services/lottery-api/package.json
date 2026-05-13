@@ -1,0 +1,14 @@
+{
+  "name": "@lottery/lottery-api",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "types": "dist/app.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@lottery/domain": "workspace:*",
+    "@lottery/rules": "workspace:*"
+  }
+}

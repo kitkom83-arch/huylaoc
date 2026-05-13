@@ -1,0 +1,308 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GameMode {
+  EXTERNAL_WALLET
+  MANUAL_CREDIT
+
+  @@map("game_mode")
+}
+
+enum RoundStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  RESULT_POSTED
+  CANCELLED
+
+  @@map("round_status")
+}
+
+enum QuoteStatus {
+  CREATED
+  EXPIRED
+  CONFIRMED
+  USED
+
+  @@map("quote_status")
+}
+
+enum TicketStatus {
+  PENDING_FUNDING
+  CONFIRMED
+  REJECTED
+  SETTLED
+  CANCELLED
+
+  @@map("ticket_status")
+}
+
+enum FundingStatus {
+  NOT_REQUIRED
+  PENDING
+  DEBITED
+  SUCCEEDED
+  FAILED
+  UNKNOWN
+  REVERSED
+
+  @@map("funding_status")
+}
+
+enum PayoutStatus {
+  NOT_REQUIRED
+  NOT_SETTLED
+  NO_WIN
+  PENDING
+  PAID
+  FAILED
+  UNKNOWN
+
+  @@map("payout_status")
+}
+
+enum LedgerType {
+  TOPUP
+  DEDUCT
+  BET_DEBIT
+  BET_PAYOUT
+  ADJUSTMENT
+  REVERSAL
+
+  @@map("ledger_type")
+}
+
+model BetTypeCatalog {
+  id           String   @id @default(uuid()) @db.Uuid
+  code         String   @unique
+  display_name String
+  digits       Int
+  outcome_rule String
+  default_odds Decimal  @db.Decimal(14, 4)
+  min_stake    Decimal  @db.Decimal(14, 2)
+  max_stake    Decimal  @db.Decimal(14, 2)
+  enabled      Boolean  @default(true)
+  metadata     Json     @default("{}")
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("bet_type_catalog")
+}
+
+model Round {
+  id                String        @id @default(uuid()) @db.Uuid
+  round_code        String        @unique
+  game_code         String        @default("LOTTERY_6D")
+  status            RoundStatus   @default(DRAFT)
+  opens_at          DateTime      @db.Timestamptz(6)
+  closes_at         DateTime      @db.Timestamptz(6)
+  draws_at          DateTime      @db.Timestamptz(6)
+  result_6d         String?
+  paytable_snapshot Json
+  resulted_at       DateTime?     @db.Timestamptz(6)
+  created_by_admin_id String?
+  created_at        DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime      @updatedAt @db.Timestamptz(6)
+  quotes            Quote[]
+  tickets           Ticket[]
+  results           Result[]
+  settlement_jobs   SettlementJob[]
+
+  @@map("rounds")
+}
+
+model Quote {
+  id                     String      @id @default(uuid()) @db.Uuid
+  quote_no               String      @unique
+  round_id               String      @db.Uuid
+  mode                   GameMode
+  customer_ref           String?
+  manual_user_id         String?     @db.Uuid
+  wallet_account_ref     String?
+  external_txn_ref       String?
+  stake_total            Decimal     @db.Decimal(14, 2)
+  potential_payout_total Decimal     @db.Decimal(14, 2)
+  currency               String      @default("THB") @db.Char(3)
+  status                 QuoteStatus @default(CREATED)
+  expires_at             DateTime    @db.Timestamptz(6)
+  request_hash           String
+  quote_snapshot         Json
+  created_at             DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime    @updatedAt @db.Timestamptz(6)
+  round                  Round       @relation(fields: [round_id], references: [id])
+  manual_user            ManualUser? @relation(fields: [manual_user_id], references: [id])
+  ticket                 Ticket?
+
+  @@map("quotes")
+}
+
+model Ticket {
+  id                      String        @id @default(uuid()) @db.Uuid
+  ticket_no               String        @unique
+  round_id                String        @db.Uuid
+  quote_id                String        @unique @db.Uuid
+  mode                    GameMode
+  customer_ref            String?
+  manual_user_id          String?       @db.Uuid
+  wallet_account_ref      String?
+  external_txn_ref        String?
+  stake_total             Decimal       @db.Decimal(14, 2)
+  potential_payout_total  Decimal       @db.Decimal(14, 2)
+  actual_payout_total     Decimal       @default(0) @db.Decimal(14, 2)
+  funding_status          FundingStatus
+  settlement_status       String        @default("PENDING")
+  payout_status           PayoutStatus  @default(NOT_REQUIRED)
+  status                  TicketStatus
+  idempotency_scope       String
+  idempotency_key         String
+  public_check_token_hash String
+  created_at              DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime      @updatedAt @db.Timestamptz(6)
+  round                   Round         @relation(fields: [round_id], references: [id])
+  quote                   Quote         @relation(fields: [quote_id], references: [id])
+  manual_user             ManualUser?   @relation(fields: [manual_user_id], references: [id])
+  items                   TicketItem[]
+
+  @@map("tickets")
+}
+
+model TicketItem {
+  id            String   @id @default(uuid()) @db.Uuid
+  ticket_id     String   @db.Uuid
+  line_no       Int
+  bet_type_code String
+  selection_raw String
+  number        String
+  stake         Decimal  @db.Decimal(14, 2)
+  odds_value    Decimal  @db.Decimal(14, 4)
+  potential_payout Decimal @db.Decimal(14, 2)
+  rule_snapshot Json
+  win_status    String   @default("PENDING")
+  payout_amount Decimal  @default(0) @db.Decimal(14, 2)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  ticket        Ticket   @relation(fields: [ticket_id], references: [id])
+
+  @@map("ticket_items")
+}
+
+model Result {
+  id          String   @id @default(uuid()) @db.Uuid
+  round_id    String   @db.Uuid
+  result_6d   String
+  result_json Json
+  posted_by_admin_id String
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  round       Round    @relation(fields: [round_id], references: [id])
+
+  @@map("results")
+}
+
+model SettlementJob {
+  id          String   @id @default(uuid()) @db.Uuid
+  round_id    String   @db.Uuid
+  status      String   @default("PENDING")
+  payload     Json     @default("{}")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @updatedAt @db.Timestamptz(6)
+  round       Round    @relation(fields: [round_id], references: [id])
+
+  @@map("settlement_jobs")
+}
+
+model WalletOutbox {
+  id                 String   @id @default(uuid()) @db.Uuid
+  type               String
+  status             String   @default("PENDING")
+  ticket_id          String?  @db.Uuid
+  external_txn_ref   String?
+  wallet_account_ref String?
+  payload            Json     @default("{}")
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("wallet_outbox")
+}
+
+model ManualUser {
+  id                  String          @id @default(uuid()) @db.Uuid
+  username            String          @unique
+  display_name        String
+  password_hash       String
+  status              String          @default("ENABLED")
+  created_by_admin_id String?
+  created_at          DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime        @updatedAt @db.Timestamptz(6)
+  credit_account      CreditAccount?
+  quotes              Quote[]
+  tickets             Ticket[]
+  ledger              CreditLedger[]
+
+  @@map("users_manual")
+}
+
+model CreditAccount {
+  id             String         @id @default(uuid()) @db.Uuid
+  manual_user_id String         @unique @db.Uuid
+  currency       String         @default("THB") @db.Char(3)
+  balance        Decimal        @default(0) @db.Decimal(14, 2)
+  version        Int            @default(1)
+  created_at     DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime       @updatedAt @db.Timestamptz(6)
+  manual_user    ManualUser     @relation(fields: [manual_user_id], references: [id])
+  ledger         CreditLedger[]
+
+  @@map("credit_accounts")
+}
+
+model CreditLedger {
+  id                String        @id @default(uuid()) @db.Uuid
+  credit_account_id String        @db.Uuid
+  manual_user_id    String        @db.Uuid
+  type              LedgerType
+  amount_delta      Decimal       @db.Decimal(14, 2)
+  balance_before    Decimal       @db.Decimal(14, 2)
+  balance_after     Decimal       @db.Decimal(14, 2)
+  reason            String
+  admin_id          String?
+  metadata          Json          @default("{}")
+  created_at        DateTime      @default(now()) @db.Timestamptz(6)
+  credit_account    CreditAccount @relation(fields: [credit_account_id], references: [id])
+  manual_user       ManualUser    @relation(fields: [manual_user_id], references: [id])
+
+  @@map("credit_ledger")
+}
+
+model AuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  actor_type    String
+  actor_id      String
+  action        String
+  resource_type String
+  resource_id   String
+  before        Json?
+  after         Json?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("audit_logs")
+}
+
+model IdempotencyKey {
+  id              String   @id @default(uuid()) @db.Uuid
+  scope           String
+  actor_ref       String
+  idempotency_key String
+  request_hash    String
+  response_status Int?
+  response_body   Json?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([scope, actor_ref, idempotency_key])
+  @@map("idempotency_keys")
+}

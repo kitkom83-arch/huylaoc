@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/domain" },
+    { "path": "packages/rules" },
+    { "path": "packages/openapi" },
+    { "path": "packages/ui" },
+    { "path": "services/lottery-api" },
+    { "path": "services/settlement-worker" },
+    { "path": "services/wallet-outbox-worker" },
+    { "path": "apps/customer-demo-th" },
+    { "path": "apps/customer-demo-la" },
+    { "path": "apps/backoffice" }
+  ]
+}

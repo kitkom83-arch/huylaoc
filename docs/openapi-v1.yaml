@@ -1,0 +1,38 @@
+openapi: 3.1.0
+info:
+  title: Lottery Game Engine API
+  version: 0.1.0
+paths:
+  /api/health:
+    get:
+      summary: Health check
+  /v1/catalog/bet-types:
+    get:
+      summary: List enabled P0 bet types
+  /v1/rounds/current:
+    get:
+      summary: Get current open round
+  /v1/results/latest:
+    get:
+      summary: Get latest posted result
+  /v1/admin/rounds:
+    post:
+      summary: Create round
+  /v1/admin/rounds/{round_id}:
+    patch:
+      summary: Patch round
+  /v1/admin/results:
+    post:
+      summary: Post round result
+  /v1/admin/manual/users:
+    post:
+      summary: Create manual user and credit account
+  /v1/admin/manual/credits/topup:
+    post:
+      summary: Top up manual credit
+  /v1/admin/manual/credits/deduct:
+    post:
+      summary: Deduct manual credit
+  /v1/admin/manual/credits/ledger:
+    get:
+      summary: List manual credit ledger

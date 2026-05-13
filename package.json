@@ -1,0 +1,52 @@
+{
+  "name": "lottery-game-engine",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@9.12.3",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b packages/domain packages/rules packages/openapi packages/ui services/lottery-api services/settlement-worker services/wallet-outbox-worker apps/customer-demo-th apps/customer-demo-la apps/backoffice",
+    "check": "tsc -b --pretty false",
+    "test": "pnpm build && vitest run",
+    "start:api": "node services/lottery-api/dist/main.js",
+    "dev:api": "pnpm build && pnpm start:api",
+    "prisma:generate": "prisma generate --schema services/lottery-api/prisma/schema.prisma",
+    "db:migrate": "node scripts/db.mjs migrate",
+    "db:seed": "node scripts/db.mjs seed",
+    "db:reset": "node scripts/db.mjs reset"
+  },
+  "prisma": {
+    "seed": "pnpm db:seed"
+  },
+  "dependencies": {
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/static": "^7.0.4",
+    "@nestjs/common": "^10.4.20",
+    "@nestjs/config": "^3.3.0",
+    "@nestjs/core": "^10.4.20",
+    "@nestjs/platform-fastify": "^10.4.20",
+    "@nestjs/swagger": "^8.1.1",
+    "@prisma/client": "^5.22.0",
+    "argon2": "^0.41.1",
+    "fastify": "^4.28.1",
+    "helmet": "^7.1.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@types/supertest": "^6.0.2",
+    "@nestjs/testing": "^10.4.20",
+    "prisma": "^5.22.0",
+    "supertest": "^7.1.3",
+    "tsx": "^4.7.3",
+    "typescript": "^5.4.5",
+    "vitest": "^1.5.0"
+  }
+}
