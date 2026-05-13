@@ -8,6 +8,14 @@ export default defineConfig({
     include: ["tests/**/*.test.ts", "packages/**/*.test.ts", "services/**/*.test.ts"],
     environment: "node",
     testTimeout: 30000,
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        minForks: 1,
+        maxForks: 1,
+        singleFork: true
+      }
+    },
     fileParallelism: false,
     globalSetup: ["tests/setup/global-db.ts"]
   },

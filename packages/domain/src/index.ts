@@ -22,10 +22,10 @@ export const betTypeDigits: Record<BetTypeCode, number> = {
 
 export type RoundStatus = "DRAFT" | "OPEN" | "CLOSED" | "RESULT_POSTED" | "CANCELLED";
 export type GameMode = "EXTERNAL_WALLET" | "MANUAL_CREDIT";
-export type LedgerType = "TOPUP" | "DEDUCT" | "BET_DEBIT" | "BET_PAYOUT" | "ADJUSTMENT" | "REVERSAL";
+export type LedgerType = "TOPUP" | "DEDUCT" | "BET_DEBIT" | "BET_PAYOUT" | "PAYOUT_CREDIT" | "ADJUSTMENT" | "REVERSAL";
 export type TicketLifecycleStatus = "PENDING_FUNDING" | "CONFIRMED" | "REJECTED" | "SETTLED" | "CANCELLED";
 export type FundingStatus = "NOT_REQUIRED" | "PENDING" | "DEBITED" | "SUCCEEDED" | "FAILED" | "UNKNOWN" | "REVERSED";
-export type SettlementStatus = "PENDING" | "SETTLED" | "CANCELLED";
+export type SettlementStatus = "PENDING" | "WON" | "LOST" | "SETTLED" | "CANCELLED";
 
 export interface BetTypeCatalogEntry {
   code: BetTypeCode;
@@ -48,7 +48,7 @@ export function isTicketEligibleForSettlement(ticket: SettlementEligibilityTicke
   return (
     ticket.status === "CONFIRMED" &&
     ticket.settlement_status === "PENDING" &&
-    (ticket.funding_status === "DEBITED" || ticket.funding_status === "SUCCEEDED")
+    (ticket.funding_status === "DEBITED" || ticket.funding_status === "SUCCEEDED" || ticket.funding_status === "NOT_REQUIRED")
   );
 }
 

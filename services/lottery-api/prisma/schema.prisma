@@ -61,6 +61,7 @@ enum PayoutStatus {
   NO_WIN
   PENDING
   PAID
+  SUCCEEDED
   FAILED
   UNKNOWN
 
@@ -72,6 +73,7 @@ enum LedgerType {
   DEDUCT
   BET_DEBIT
   BET_PAYOUT
+  PAYOUT_CREDIT
   ADJUSTMENT
   REVERSAL
 

@@ -3,6 +3,15 @@ import { Prisma } from "@prisma/client";
 import { mapCreditLedger, PrismaRepository, type DbClient } from "../store/prisma.repository.js";
 import type { CreditLedgerRecord } from "../store/records.js";
 
+type CreditLedgerAppendType = Exclude<CreditLedgerRecord["type"], "PAYOUT_CREDIT">;
+
+function toPrismaLedgerType(type: CreditLedgerRecord["type"]): CreditLedgerAppendType {
+  if (type === "PAYOUT_CREDIT") {
+    throw new Error("PAYOUT_CREDIT is created by the settlement worker");
+  }
+  return type;
+}
+
 @Injectable()
 export class CreditLedgerRepository {
   constructor(private readonly repo: PrismaRepository) {}
@@ -12,7 +21,7 @@ export class CreditLedgerRepository {
       data: {
         credit_account_id: input.credit_account_id,
         manual_user_id: input.manual_user_id,
-        type: input.type,
+        type: toPrismaLedgerType(input.type),
         amount_delta: new Prisma.Decimal(input.amount_delta),
         balance_before: new Prisma.Decimal(input.balance_before),
         balance_after: new Prisma.Decimal(input.balance_after),
