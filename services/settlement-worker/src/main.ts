@@ -6,6 +6,12 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
 type SettlementJobStatus = "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED";
 type TicketWithItems = Ticket & { items: TicketItem[] };
 
+export interface SettlementWorkerOptions {
+  batchSize?: number;
+  leaseTimeoutMs?: number;
+  now?: () => Date;
+}
+
 export interface SettlementPreflightReport {
   settlement_job_id: string;
   round_id: string;
@@ -18,15 +24,27 @@ export interface SettlementRunReport {
   settlement_job_id: string;
   round_id: string;
   status: SettlementJobStatus;
+  scanned_count: number;
+  claimed_count: number;
+  processed_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  unknown_count: number;
+  retried_count: number;
+  skipped_count: number;
+  stale_recovered_count: number;
   tickets_total: number;
   tickets_done: number;
   winners_found: number;
   payouts_succeeded: number;
   payouts_failed: number;
-  skipped_count: number;
 }
 
+export type StatusSummary = Record<string, number>;
+
 const manualEligibleFundingStatuses = ["DEBITED", "SUCCEEDED", "NOT_REQUIRED"] as const;
+const terminalSettlementJobStatuses = new Set<SettlementJobStatus>(["SUCCEEDED", "FAILED"]);
+const workerActorId = "settlement-worker";
 
 function money(value: number): number {
   return Number(value.toFixed(2));
@@ -51,12 +69,20 @@ function reportFromJob(job: SettlementJob): SettlementRunReport {
     settlement_job_id: job.id,
     round_id: job.round_id,
     status: job.status as SettlementJobStatus,
+    scanned_count: typeof payload.scanned_count === "number" ? payload.scanned_count : 1,
+    claimed_count: typeof payload.claimed_count === "number" ? payload.claimed_count : 0,
+    processed_count: typeof payload.processed_count === "number" ? payload.processed_count : 0,
+    succeeded_count: typeof payload.succeeded_count === "number" ? payload.succeeded_count : job.status === "SUCCEEDED" ? 1 : 0,
+    failed_count: typeof payload.failed_count === "number" ? payload.failed_count : job.status === "FAILED" ? 1 : 0,
+    unknown_count: typeof payload.unknown_count === "number" ? payload.unknown_count : 0,
+    retried_count: typeof payload.retried_count === "number" ? payload.retried_count : 0,
+    skipped_count: typeof payload.skipped_count === "number" ? payload.skipped_count : 0,
+    stale_recovered_count: typeof payload.stale_recovered_count === "number" ? payload.stale_recovered_count : 0,
     tickets_total: typeof payload.tickets_total === "number" ? payload.tickets_total : 0,
     tickets_done: typeof payload.tickets_done === "number" ? payload.tickets_done : 0,
     winners_found: typeof payload.winners_found === "number" ? payload.winners_found : 0,
     payouts_succeeded: typeof payload.payouts_succeeded === "number" ? payload.payouts_succeeded : 0,
-    payouts_failed: typeof payload.payouts_failed === "number" ? payload.payouts_failed : 0,
-    skipped_count: typeof payload.skipped_count === "number" ? payload.skipped_count : 0
+    payouts_failed: typeof payload.payouts_failed === "number" ? payload.payouts_failed : 0
   };
 }
 
@@ -130,9 +156,49 @@ async function lockSettlementJob(db: DbClient, settlementJobId?: string): Promis
   return job;
 }
 
+async function appendSettlementAudit(
+  db: DbClient,
+  job: SettlementJob,
+  previousStatus: SettlementJobStatus,
+  nextStatus: SettlementJobStatus,
+  action = "SETTLEMENT_JOB_STATUS_CHANGE",
+  extra: Record<string, unknown> = {}
+): Promise<void> {
+  await db.auditLog.create({
+    data: {
+      actor_type: "SYSTEM",
+      actor_id: workerActorId,
+      action,
+      resource_type: "settlement_job",
+      resource_id: job.id,
+      before: { status: previousStatus, round_id: job.round_id },
+      after: {
+        status: nextStatus,
+        round_id: job.round_id,
+        ...extra
+      }
+    }
+  });
+}
+
+async function payoutLedgerExists(db: Prisma.TransactionClient, ticketId: string): Promise<boolean> {
+  const rows = await db.$queryRaw<Array<{ exists: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1
+      FROM credit_ledger
+      WHERE type::text = 'PAYOUT_CREDIT'
+        AND metadata->>'ticket_id' = ${ticketId}
+    ) AS exists
+  `;
+  return rows[0]?.exists ?? false;
+}
+
 async function creditManualPayout(db: Prisma.TransactionClient, ticket: Ticket, payoutTotal: number, settlementJobId: string): Promise<void> {
   if (!ticket.manual_user_id) {
     throw new Error("manual ticket has no manual user");
+  }
+  if (await payoutLedgerExists(db, ticket.id)) {
+    return;
   }
 
   const accounts = await db.$queryRaw<Array<{ id: string; manual_user_id: string; balance: Prisma.Decimal }>>`
@@ -187,6 +253,17 @@ async function creditManualPayout(db: Prisma.TransactionClient, ticket: Ticket, 
 }
 
 async function enqueueWalletPayout(db: Prisma.TransactionClient, ticket: Ticket, payoutTotal: number, settlementJobId: string): Promise<void> {
+  const existingOutbox = await db.walletOutbox.findFirst({
+    where: {
+      ticket_id: ticket.id,
+      type: "WALLET_CREDIT"
+    },
+    select: { id: true }
+  });
+  if (existingOutbox) {
+    return;
+  }
+
   await db.walletOutbox.create({
     data: {
       type: "WALLET_CREDIT",
@@ -254,7 +331,15 @@ async function settleTicket(db: Prisma.TransactionClient, ticket: TicketWithItem
 }
 
 export class SettlementWorkerService {
-  constructor(private readonly prisma: PrismaClient = new PrismaClient()) {}
+  private readonly options: Required<SettlementWorkerOptions>;
+
+  constructor(private readonly prisma: PrismaClient = new PrismaClient(), options: SettlementWorkerOptions = {}) {
+    this.options = {
+      batchSize: options.batchSize ?? 25,
+      leaseTimeoutMs: options.leaseTimeoutMs ?? 5 * 60_000,
+      now: options.now ?? (() => new Date())
+    };
+  }
 
   disconnect(): Promise<void> {
     return this.prisma.$disconnect();
@@ -268,11 +353,22 @@ export class SettlementWorkerService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const job = await lockSettlementJob(tx, settlementJobId);
-        if (job.status === "SUCCEEDED") {
+        const jobStatus = job.status as SettlementJobStatus;
+        if (terminalSettlementJobStatuses.has(jobStatus)) {
+          return reportFromJob(job);
+        }
+        if (jobStatus !== "PENDING") {
           return reportFromJob(job);
         }
 
-        await tx.settlementJob.update({ where: { id: job.id }, data: { status: "PROCESSING" } });
+        const claimed = await tx.settlementJob.updateMany({
+          where: { id: job.id, status: "PENDING" },
+          data: { status: "PROCESSING" }
+        });
+        if (claimed.count !== 1) {
+          const current = await tx.settlementJob.findUniqueOrThrow({ where: { id: job.id } });
+          return reportFromJob(current);
+        }
 
         const result6d = await loadResult6d(tx, job);
         result6dSchema.parse(result6d);
@@ -281,12 +377,20 @@ export class SettlementWorkerService {
           settlement_job_id: job.id,
           round_id: job.round_id,
           status: "SUCCEEDED",
+          scanned_count: 1,
+          claimed_count: 1,
+          processed_count: 0,
+          succeeded_count: 0,
+          failed_count: 0,
+          unknown_count: 0,
+          retried_count: 0,
+          skipped_count: ticketCount - eligibleTickets.length,
+          stale_recovered_count: 0,
           tickets_total: eligibleTickets.length,
           tickets_done: 0,
           winners_found: 0,
           payouts_succeeded: 0,
-          payouts_failed: 0,
-          skipped_count: ticketCount - eligibleTickets.length
+          payouts_failed: 0
         };
 
         for (const ticket of eligibleTickets) {
@@ -298,6 +402,9 @@ export class SettlementWorkerService {
         }
 
         report.status = report.payouts_failed > 0 ? "FAILED" : "SUCCEEDED";
+        report.processed_count = 1;
+        report.succeeded_count = report.status === "SUCCEEDED" ? 1 : 0;
+        report.failed_count = report.status === "FAILED" ? 1 : 0;
         await tx.settlementJob.update({
           where: { id: job.id },
           data: {
@@ -310,7 +417,15 @@ export class SettlementWorkerService {
               winners_found: report.winners_found,
               payouts_succeeded: report.payouts_succeeded,
               payouts_failed: report.payouts_failed,
-              skipped_count: report.skipped_count
+              skipped_count: report.skipped_count,
+              scanned_count: report.scanned_count,
+              claimed_count: report.claimed_count,
+              processed_count: report.processed_count,
+              succeeded_count: report.succeeded_count,
+              failed_count: report.failed_count,
+              unknown_count: report.unknown_count,
+              retried_count: report.retried_count,
+              stale_recovered_count: report.stale_recovered_count
             }
           }
         });
@@ -331,6 +446,94 @@ export class SettlementWorkerService {
       throw error;
     }
   }
+
+  async recoverStaleProcessingJobs(limit = this.options.batchSize): Promise<SettlementRunReport> {
+    const cutoff = new Date(this.options.now().getTime() - this.options.leaseTimeoutMs);
+    const rows = await this.prisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<SettlementJob>>`
+        SELECT *
+        FROM settlement_jobs
+        WHERE status = 'PROCESSING'
+          AND updated_at <= ${cutoff}
+        ORDER BY updated_at ASC
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      `;
+    });
+    const report = emptySettlementWorkerReport(rows[0]);
+    report.scanned_count = rows.length;
+    report.claimed_count = rows.length;
+
+    for (const job of rows) {
+      const recovered = await this.prisma.$transaction(async (tx) => {
+        const locked = await lockSettlementJob(tx, job.id);
+        const status = locked.status as SettlementJobStatus;
+        if (terminalSettlementJobStatuses.has(status) || status !== "PROCESSING" || locked.updated_at > cutoff) {
+          return false;
+        }
+        const payload = typeof locked.payload === "object" && locked.payload !== null && !Array.isArray(locked.payload)
+          ? locked.payload as Prisma.JsonObject
+          : {};
+        const recoveryCount = typeof payload.recovery_count === "number" ? payload.recovery_count + 1 : 1;
+        await tx.settlementJob.update({
+          where: { id: locked.id },
+          data: {
+            status: "PENDING",
+            payload: {
+              ...payload,
+              recovery_count: recoveryCount,
+              recovered_from_status: "PROCESSING",
+              stale_recovered_at: this.options.now().toISOString()
+            }
+          }
+        });
+        await appendSettlementAudit(tx, locked, "PROCESSING", "PENDING", "SETTLEMENT_JOB_STALE_RECOVERED", {
+          recovery_count: recoveryCount,
+          lease_timeout_ms: this.options.leaseTimeoutMs
+        });
+        return true;
+      });
+      if (recovered) {
+        report.processed_count += 1;
+        report.retried_count += 1;
+        report.stale_recovered_count += 1;
+      } else {
+        report.skipped_count += 1;
+      }
+    }
+
+    return report;
+  }
+
+  async getSettlementJobSummaryByStatus(): Promise<StatusSummary> {
+    const rows = await this.prisma.settlementJob.groupBy({
+      by: ["status"],
+      _count: { _all: true }
+    });
+    return Object.fromEntries(rows.map((row) => [row.status, row._count._all]));
+  }
+}
+
+function emptySettlementWorkerReport(job?: SettlementJob): SettlementRunReport {
+  return {
+    settlement_job_id: job?.id ?? "",
+    round_id: job?.round_id ?? "",
+    status: (job?.status as SettlementJobStatus | undefined) ?? "PENDING",
+    scanned_count: 0,
+    claimed_count: 0,
+    processed_count: 0,
+    succeeded_count: 0,
+    failed_count: 0,
+    unknown_count: 0,
+    retried_count: 0,
+    skipped_count: 0,
+    stale_recovered_count: 0,
+    tickets_total: 0,
+    tickets_done: 0,
+    winners_found: 0,
+    payouts_succeeded: 0,
+    payouts_failed: 0
+  };
 }
 
 export class SettlementPreflightService {

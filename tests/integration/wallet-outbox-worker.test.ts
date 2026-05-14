@@ -75,7 +75,7 @@ async function createOutbox(input: {
   ticketId: string;
   suffix: string;
   type: "WALLET_DEBIT" | "WALLET_CREDIT";
-  status?: "PENDING" | "SUCCEEDED" | "FAILED" | "UNKNOWN";
+  status?: "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED" | "UNKNOWN";
   amount?: number;
 }) {
   const amountKey = input.type === "WALLET_DEBIT" ? "stake_total" : "payout_total";
@@ -107,6 +107,7 @@ function workerWith(resultByOperationRef: Record<string, MockWalletResult>, opti
       now: () => baseDate,
       baseBackoffMs: 1_000,
       maxBackoffMs: 10_000,
+      leaseTimeoutMs: 5 * 60_000,
       maxRetries: options.maxRetries ?? 3
     })
   };
@@ -114,6 +115,12 @@ function workerWith(resultByOperationRef: Record<string, MockWalletResult>, opti
 
 async function auditCount(action: string, resourceId?: string): Promise<number> {
   return prisma.auditLog.count({ where: { action, ...(resourceId ? { resource_id: resourceId } : {}) } });
+}
+
+async function setOutboxUpdatedAt(outboxId: string, updatedAt: Date): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE wallet_outbox SET updated_at = ${updatedAt} WHERE id = CAST(${outboxId} AS uuid)
+  `;
 }
 
 describe("wallet outbox worker Phase 1.6 hardening", () => {
@@ -268,5 +275,108 @@ describe("wallet outbox worker Phase 1.6 hardening", () => {
     expect(updatedCreditTicket.payout_status).toBe("FAILED");
     await expect(auditCount("WALLET_DEBIT_SUCCEEDED", debitOutbox.id)).resolves.toBe(1);
     await expect(auditCount("WALLET_CREDIT_FAILED", creditOutbox.id)).resolves.toBe(1);
+  });
+
+  it("stale PROCESSING row is recovered to PENDING with backoff and audit", async () => {
+    const ticket = await createWalletTicket({ suffix: "STALE-RECOVER" });
+    const outbox = await createOutbox({ ticketId: ticket.id, suffix: "STALE-RECOVER", type: "WALLET_DEBIT", status: "PROCESSING" });
+    await setOutboxUpdatedAt(outbox.id, new Date("2026-05-13T23:50:00.000Z"));
+    const { worker, client } = workerWith({});
+
+    const report = await worker.recoverStaleProcessingRows();
+    const updatedOutbox = await prisma.walletOutbox.findUniqueOrThrow({ where: { id: outbox.id } });
+
+    expect(report).toMatchObject({
+      scanned_count: 1,
+      claimed_count: 1,
+      processed_count: 1,
+      retried_count: 1,
+      stale_recovered_count: 1,
+      retries_scheduled: 1
+    });
+    expect(client.callCount(outbox.operation_ref)).toBe(0);
+    expect(updatedOutbox.status).toBe("PENDING");
+    expect(updatedOutbox.retry_count).toBe(1);
+    expect(updatedOutbox.next_retry_at?.toISOString()).toBe("2026-05-14T00:00:01.000Z");
+    await expect(auditCount("WALLET_OUTBOX_STALE_RECOVERED", outbox.id)).resolves.toBe(1);
+  });
+
+  it("fresh PROCESSING row is not recovered", async () => {
+    const ticket = await createWalletTicket({ suffix: "FRESH-PROCESSING" });
+    const outbox = await createOutbox({ ticketId: ticket.id, suffix: "FRESH-PROCESSING", type: "WALLET_DEBIT", status: "PROCESSING" });
+    await setOutboxUpdatedAt(outbox.id, new Date("2026-05-13T23:59:00.000Z"));
+    const { worker } = workerWith({});
+
+    const report = await worker.recoverStaleProcessingRows();
+    const updatedOutbox = await prisma.walletOutbox.findUniqueOrThrow({ where: { id: outbox.id } });
+
+    expect(report).toMatchObject({ scanned_count: 0, stale_recovered_count: 0 });
+    expect(updatedOutbox.status).toBe("PROCESSING");
+    expect(updatedOutbox.retry_count).toBe(0);
+  });
+
+  it("terminal SUCCEEDED and FAILED rows are skipped by stale recovery", async () => {
+    const succeededTicket = await createWalletTicket({ suffix: "TERMINAL-SUCCEEDED" });
+    const failedTicket = await createWalletTicket({ suffix: "TERMINAL-FAILED" });
+    const succeeded = await createOutbox({ ticketId: succeededTicket.id, suffix: "TERMINAL-SUCCEEDED", type: "WALLET_DEBIT", status: "SUCCEEDED" });
+    const failed = await createOutbox({ ticketId: failedTicket.id, suffix: "TERMINAL-FAILED", type: "WALLET_DEBIT", status: "FAILED" });
+    await setOutboxUpdatedAt(succeeded.id, new Date("2026-05-13T23:00:00.000Z"));
+    await setOutboxUpdatedAt(failed.id, new Date("2026-05-13T23:00:00.000Z"));
+    const { worker } = workerWith({});
+
+    const report = await worker.recoverStaleProcessingRows();
+
+    expect(report).toMatchObject({ scanned_count: 0, stale_recovered_count: 0 });
+    await expect(prisma.walletOutbox.findUniqueOrThrow({ where: { id: succeeded.id } }).then((row) => row.status)).resolves.toBe("SUCCEEDED");
+    await expect(prisma.walletOutbox.findUniqueOrThrow({ where: { id: failed.id } }).then((row) => row.status)).resolves.toBe("FAILED");
+  });
+
+  it("worker run metrics and status summary include expected counts", async () => {
+    const successTicket = await createWalletTicket({ suffix: "METRICS-SUCCESS" });
+    const retryTicket = await createWalletTicket({ suffix: "METRICS-RETRY" });
+    const futureTicket = await createWalletTicket({ suffix: "METRICS-FUTURE" });
+    const success = await createOutbox({ ticketId: successTicket.id, suffix: "METRICS-SUCCESS", type: "WALLET_DEBIT" });
+    const retry = await createOutbox({ ticketId: retryTicket.id, suffix: "METRICS-RETRY", type: "WALLET_DEBIT" });
+    await createOutbox({ ticketId: futureTicket.id, suffix: "METRICS-FUTURE", type: "WALLET_DEBIT" });
+    await prisma.walletOutbox.update({
+      where: { operation_ref: "op-METRICS-FUTURE" },
+      data: { next_retry_at: new Date("2026-05-14T00:01:00.000Z") }
+    });
+    const { worker } = workerWith({ [retry.operation_ref]: { status: "FAILED", retryable: true, message: "retry later" } });
+
+    const report = await worker.processPendingOutboxRows();
+    const summary = await worker.getWalletOutboxSummaryByStatus();
+
+    expect(report).toMatchObject({
+      scanned_count: 2,
+      claimed_count: 2,
+      processed_count: 2,
+      succeeded_count: 1,
+      retried_count: 1,
+      stale_recovered_count: 0,
+      processed: 2,
+      succeeded: 1,
+      retries_scheduled: 1
+    });
+    expect(summary).toMatchObject({ SUCCEEDED: 1, PENDING: 2 });
+    await expect(prisma.walletOutbox.findUniqueOrThrow({ where: { id: success.id } }).then((row) => row.status)).resolves.toBe("SUCCEEDED");
+  });
+
+  it("two worker runs do not process the same pending outbox row twice", async () => {
+    const ticket = await createWalletTicket({ suffix: "CONCURRENT-CLAIM" });
+    const outbox = await createOutbox({ ticketId: ticket.id, suffix: "CONCURRENT-CLAIM", type: "WALLET_DEBIT" });
+    const client = new ScriptedMockWalletClient();
+    const workerA = new WalletOutboxWorkerService(prisma, client, { now: () => baseDate });
+    const workerB = new WalletOutboxWorkerService(prisma, client, { now: () => baseDate });
+
+    const reports = await Promise.all([
+      workerA.processPendingOutboxRows(),
+      workerB.processPendingOutboxRows()
+    ]);
+
+    expect(reports.reduce((sum, report) => sum + report.claimed_count, 0)).toBe(1);
+    expect(reports.reduce((sum, report) => sum + report.processed_count, 0)).toBe(1);
+    expect(client.callCount(outbox.operation_ref)).toBe(1);
+    await expect(prisma.walletOutbox.findUniqueOrThrow({ where: { id: outbox.id } }).then((row) => row.status)).resolves.toBe("SUCCEEDED");
   });
 });

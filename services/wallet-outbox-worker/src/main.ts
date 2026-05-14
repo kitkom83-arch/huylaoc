@@ -40,10 +40,20 @@ export interface WalletOutboxWorkerOptions {
   maxRetries?: number;
   baseBackoffMs?: number;
   maxBackoffMs?: number;
+  leaseTimeoutMs?: number;
   now?: () => Date;
 }
 
 export interface WalletOutboxWorkerReport {
+  scanned_count: number;
+  claimed_count: number;
+  processed_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  unknown_count: number;
+  retried_count: number;
+  skipped_count: number;
+  stale_recovered_count: number;
   processed: number;
   succeeded: number;
   failed: number;
@@ -52,6 +62,8 @@ export interface WalletOutboxWorkerReport {
   skipped: number;
 }
 
+export type StatusSummary = Record<string, number>;
+
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
 const terminalStatuses = new Set<WalletOutboxStatus>(["SUCCEEDED", "FAILED"]);
@@ -59,6 +71,15 @@ const workerActorId = "wallet-outbox-worker";
 
 function defaultReport(): WalletOutboxWorkerReport {
   return {
+    scanned_count: 0,
+    claimed_count: 0,
+    processed_count: 0,
+    succeeded_count: 0,
+    failed_count: 0,
+    unknown_count: 0,
+    retried_count: 0,
+    skipped_count: 0,
+    stale_recovered_count: 0,
     processed: 0,
     succeeded: 0,
     failed: 0,
@@ -314,6 +335,7 @@ export class WalletOutboxWorkerService {
       maxRetries: options.maxRetries ?? 3,
       baseBackoffMs: options.baseBackoffMs ?? 30_000,
       maxBackoffMs: options.maxBackoffMs ?? 5 * 60_000,
+      leaseTimeoutMs: options.leaseTimeoutMs ?? 5 * 60_000,
       now: options.now ?? (() => new Date())
     };
   }
@@ -325,13 +347,20 @@ export class WalletOutboxWorkerService {
   async processPendingOutboxRows(limit = this.options.batchSize): Promise<WalletOutboxWorkerReport> {
     const report = defaultReport();
     const rows = await this.claimDuePendingRows(limit);
+    report.scanned_count = rows.scannedCount;
+    report.claimed_count = rows.claimedRows.length;
 
-    for (const outbox of rows) {
+    for (const outbox of rows.claimedRows) {
       const result = await this.processClaimedRow(outbox);
+      report.processed_count += 1;
       report.processed += 1;
+      report.succeeded_count += result === "SUCCEEDED" ? 1 : 0;
       report.succeeded += result === "SUCCEEDED" ? 1 : 0;
+      report.failed_count += result === "FAILED" ? 1 : 0;
       report.failed += result === "FAILED" ? 1 : 0;
+      report.unknown_count += result === "UNKNOWN" ? 1 : 0;
       report.unknown += result === "UNKNOWN" ? 1 : 0;
+      report.retried_count += result === "PENDING" ? 1 : 0;
       report.retries_scheduled += result === "PENDING" ? 1 : 0;
     }
 
@@ -341,10 +370,13 @@ export class WalletOutboxWorkerService {
   async reconcileUnknownOutboxRows(limit = this.options.batchSize): Promise<WalletOutboxWorkerReport> {
     const report = defaultReport();
     const rows = await this.lockUnknownRows(limit);
+    report.scanned_count = rows.length;
+    report.claimed_count = rows.length;
 
     for (const outbox of rows) {
       const result = await this.walletClient.reconcile(operationFromOutbox(outbox));
       if (result.status === "UNKNOWN") {
+        report.unknown_count += 1;
         report.unknown += 1;
         continue;
       }
@@ -352,12 +384,16 @@ export class WalletOutboxWorkerService {
       await this.prisma.$transaction(async (tx) => {
         const locked = await lockOutbox(tx, outbox.id);
         if (locked.status !== "UNKNOWN") {
+          report.skipped_count += 1;
           report.skipped += 1;
           return;
         }
         await applyFinalStatus(tx, locked, result.status, auditAction(locked.type as WalletOutboxType, result.status), result.message);
+        report.processed_count += 1;
         report.processed += 1;
+        report.succeeded_count += result.status === "SUCCEEDED" ? 1 : 0;
         report.succeeded += result.status === "SUCCEEDED" ? 1 : 0;
+        report.failed_count += result.status === "FAILED" ? 1 : 0;
         report.failed += result.status === "FAILED" ? 1 : 0;
       });
     }
@@ -365,7 +401,61 @@ export class WalletOutboxWorkerService {
     return report;
   }
 
-  private async claimDuePendingRows(limit: number): Promise<WalletOutbox[]> {
+  async recoverStaleProcessingRows(limit = this.options.batchSize): Promise<WalletOutboxWorkerReport> {
+    const report = defaultReport();
+    const cutoff = new Date(this.options.now().getTime() - this.options.leaseTimeoutMs);
+
+    const rows = await this.prisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<WalletOutbox>>`
+        SELECT *
+        FROM wallet_outbox
+        WHERE type IN ('WALLET_DEBIT', 'WALLET_CREDIT')
+          AND status = 'PROCESSING'
+          AND updated_at <= ${cutoff}
+        ORDER BY updated_at ASC
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      `;
+    });
+
+    report.scanned_count = rows.length;
+    report.claimed_count = rows.length;
+
+    for (const outbox of rows) {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const locked = await lockOutbox(tx, outbox.id);
+        if (locked.status !== "PROCESSING" || locked.updated_at > cutoff) {
+          return "SKIPPED" as const;
+        }
+        return this.scheduleRetryOrFail(tx, locked, "stale PROCESSING lease recovered", "WALLET_OUTBOX_STALE_RECOVERED");
+      });
+
+      if (result === "SKIPPED") {
+        report.skipped_count += 1;
+        report.skipped += 1;
+        continue;
+      }
+      report.processed_count += 1;
+      report.processed += 1;
+      report.stale_recovered_count += result === "PENDING" ? 1 : 0;
+      report.retried_count += result === "PENDING" ? 1 : 0;
+      report.retries_scheduled += result === "PENDING" ? 1 : 0;
+      report.failed_count += result === "FAILED" ? 1 : 0;
+      report.failed += result === "FAILED" ? 1 : 0;
+    }
+
+    return report;
+  }
+
+  async getWalletOutboxSummaryByStatus(): Promise<StatusSummary> {
+    const rows = await this.prisma.walletOutbox.groupBy({
+      by: ["status"],
+      _count: { _all: true }
+    });
+    return Object.fromEntries(rows.map((row) => [row.status, row._count._all]));
+  }
+
+  private async claimDuePendingRows(limit: number): Promise<{ scannedCount: number; claimedRows: WalletOutbox[] }> {
     return this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<Array<WalletOutbox>>`
         SELECT *
@@ -378,14 +468,18 @@ export class WalletOutboxWorkerService {
         FOR UPDATE SKIP LOCKED
       `;
 
+      const claimedRows: WalletOutbox[] = [];
       for (const row of rows) {
-        await tx.walletOutbox.update({
-          where: { id: row.id },
+        const claimed = await tx.walletOutbox.updateMany({
+          where: { id: row.id, status: "PENDING" },
           data: { status: "PROCESSING" }
         });
+        if (claimed.count === 1) {
+          claimedRows.push({ ...row, status: "PROCESSING" });
+        }
       }
 
-      return rows.map((row) => ({ ...row, status: "PROCESSING" }));
+      return { scannedCount: rows.length, claimedRows };
     });
   }
 
@@ -432,7 +526,7 @@ export class WalletOutboxWorkerService {
     });
   }
 
-  private async scheduleRetryOrFail(db: Prisma.TransactionClient, outbox: WalletOutbox, message?: string): Promise<WalletOutboxStatus> {
+  private async scheduleRetryOrFail(db: Prisma.TransactionClient, outbox: WalletOutbox, message?: string, action = "WALLET_RETRY_SCHEDULED"): Promise<WalletOutboxStatus> {
     const nextRetryCount = outbox.retry_count + 1;
     if (nextRetryCount >= this.options.maxRetries) {
       await db.walletOutbox.update({
@@ -445,7 +539,7 @@ export class WalletOutboxWorkerService {
         }
       });
       await updateRelatedTicket(db, outbox, "FAILED");
-      await appendAudit(db, outbox, outbox.status as WalletOutboxStatus, "FAILED", auditAction(outbox.type as WalletOutboxType, "FAILED"), {
+      await appendAudit(db, outbox, outbox.status as WalletOutboxStatus, "FAILED", action === "WALLET_RETRY_SCHEDULED" ? auditAction(outbox.type as WalletOutboxType, "FAILED") : action, {
         retry_count: nextRetryCount,
         max_retries: this.options.maxRetries,
         message: sanitizedError(message)
@@ -463,7 +557,7 @@ export class WalletOutboxWorkerService {
         last_error: sanitizedError(message)
       }
     });
-    await appendAudit(db, outbox, outbox.status as WalletOutboxStatus, "PENDING", "WALLET_RETRY_SCHEDULED", {
+    await appendAudit(db, outbox, outbox.status as WalletOutboxStatus, "PENDING", action, {
       retry_count: nextRetryCount,
       next_retry_at: nextRetryAt.toISOString(),
       message: sanitizedError(message)

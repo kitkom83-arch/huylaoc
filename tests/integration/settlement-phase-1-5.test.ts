@@ -10,6 +10,7 @@ const adminHeaders = {
   "x-admin-id": "admin-test",
   "x-admin-role": "admin"
 };
+const baseDate = new Date("2026-05-14T00:00:00.000Z");
 
 function idempotency(key: string) {
   return { "Idempotency-Key": key };
@@ -113,6 +114,29 @@ function payoutCreditLedgerCount(ticketId?: string): Promise<number> {
   return prisma.$queryRaw<Array<{ count: bigint }>>`
     SELECT COUNT(*)::bigint AS count FROM credit_ledger WHERE type::text = 'PAYOUT_CREDIT' AND metadata->>'ticket_id' = ${ticketId}
   `.then((rows) => Number(rows[0]?.count ?? 0));
+}
+
+async function setSettlementJobUpdatedAt(jobId: string, status: "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED", updatedAt: Date): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE settlement_jobs SET status = ${status}, updated_at = ${updatedAt} WHERE id = CAST(${jobId} AS uuid)
+  `;
+}
+
+async function makeTicketSettlementPending(ticketId: string): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE tickets
+    SET
+      status = 'CONFIRMED',
+      settlement_status = 'PENDING',
+      payout_status = CAST('NOT_SETTLED' AS payout_status),
+      actual_payout_total = 0,
+      updated_at = now()
+    WHERE id = CAST(${ticketId} AS uuid)
+  `;
+}
+
+async function settlementAuditCount(action: string, resourceId?: string): Promise<number> {
+  return prisma.auditLog.count({ where: { action, ...(resourceId ? { resource_id: resourceId } : {}) } });
 }
 
 describe("settlement Phase 1.5 worker", () => {
@@ -283,5 +307,72 @@ describe("settlement Phase 1.5 worker", () => {
       payouts_failed: 0,
       skipped_count: 1
     });
+  });
+
+  it("stale PROCESSING settlement job is recovered and can be retried safely", async () => {
+    const round = await createRound(app, "SETTLE-STALE-RECOVER");
+    const user = await createManualUser(app, "stale_recover");
+    await createManualTicket(app, { roundId: round.id, userId: user.id, suffix: "stale-recover", selection: "13" });
+    const job = await postResult(app, round.id, "stale-recover");
+    const recoveryWorker = new SettlementWorkerService(prisma, { now: () => baseDate, leaseTimeoutMs: 5 * 60_000 });
+    await setSettlementJobUpdatedAt(job.id, "PROCESSING", new Date("2026-05-13T23:50:00.000Z"));
+
+    const recovery = await recoveryWorker.recoverStaleProcessingJobs();
+    const recoveredJob = await prisma.settlementJob.findUniqueOrThrow({ where: { id: job.id } });
+    const report = await recoveryWorker.settleSettlementJob(job.id);
+    const summary = await recoveryWorker.getSettlementJobSummaryByStatus();
+
+    expect(recovery).toMatchObject({
+      scanned_count: 1,
+      claimed_count: 1,
+      processed_count: 1,
+      retried_count: 1,
+      stale_recovered_count: 1
+    });
+    expect(recoveredJob.status).toBe("PENDING");
+    expect(report).toMatchObject({ status: "SUCCEEDED", tickets_done: 1, winners_found: 0 });
+    expect(summary).toMatchObject({ SUCCEEDED: 1 });
+    await expect(settlementAuditCount("SETTLEMENT_JOB_STALE_RECOVERED", job.id)).resolves.toBe(1);
+  });
+
+  it("rerun after stale recovery does not duplicate manual payout credit", async () => {
+    const round = await createRound(app, "SETTLE-NO-DUP-MANUAL");
+    const user = await createManualUser(app, "no_dup_manual");
+    const ticket = await createManualTicket(app, { roundId: round.id, userId: user.id, suffix: "no-dup-manual", selection: "12" });
+    const job = await postResult(app, round.id, "no-dup-manual");
+    const recoveryWorker = new SettlementWorkerService(prisma, { now: () => baseDate, leaseTimeoutMs: 5 * 60_000 });
+
+    await settlement.settleSettlementJob(job.id);
+    await expect(payoutCreditLedgerCount(ticket.id)).resolves.toBe(1);
+    await makeTicketSettlementPending(ticket.id);
+    await setSettlementJobUpdatedAt(job.id, "PROCESSING", new Date("2026-05-13T23:50:00.000Z"));
+
+    await recoveryWorker.recoverStaleProcessingJobs();
+    const rerun = await recoveryWorker.settleSettlementJob(job.id);
+    const account = await prisma.creditAccount.findUniqueOrThrow({ where: { manual_user_id: user.id } });
+
+    expect(rerun).toMatchObject({ status: "SUCCEEDED", tickets_done: 1, winners_found: 1, payouts_succeeded: 1 });
+    await expect(payoutCreditLedgerCount(ticket.id)).resolves.toBe(1);
+    expect(Number(account.balance)).toBe(1890);
+  });
+
+  it("rerun after stale recovery does not duplicate wallet credit outbox", async () => {
+    const round = await createRound(app, "SETTLE-NO-DUP-WALLET");
+    const { ticket, outbox } = await createExternalTicket(app, { roundId: round.id, suffix: "no-dup-wallet", selection: "2" });
+    await walletOutbox.markWalletOutboxSucceeded(outbox.id);
+    const job = await postResult(app, round.id, "no-dup-wallet");
+    const recoveryWorker = new SettlementWorkerService(prisma, { now: () => baseDate, leaseTimeoutMs: 5 * 60_000 });
+
+    await settlement.settleSettlementJob(job.id);
+    await expect(prisma.walletOutbox.count({ where: { ticket_id: ticket.id, type: "WALLET_CREDIT" } })).resolves.toBe(1);
+    await makeTicketSettlementPending(ticket.id);
+    await setSettlementJobUpdatedAt(job.id, "PROCESSING", new Date("2026-05-13T23:50:00.000Z"));
+
+    await recoveryWorker.recoverStaleProcessingJobs();
+    const rerun = await recoveryWorker.settleSettlementJob(job.id);
+
+    expect(rerun).toMatchObject({ status: "SUCCEEDED", tickets_done: 1, winners_found: 1 });
+    await expect(prisma.walletOutbox.count({ where: { ticket_id: ticket.id, type: "WALLET_CREDIT" } })).resolves.toBe(1);
+    await expect(payoutCreditLedgerCount()).resolves.toBe(0);
   });
 });
