@@ -221,13 +221,18 @@ model WalletOutbox {
   id                 String   @id @default(uuid()) @db.Uuid
   type               String
   status             String   @default("PENDING")
+  operation_ref      String   @unique @default(dbgenerated("gen_random_uuid()::text"))
   ticket_id          String?  @db.Uuid
   external_txn_ref   String?
   wallet_account_ref String?
   payload            Json     @default("{}")
+  retry_count        Int      @default(0)
+  next_retry_at      DateTime? @db.Timestamptz(6)
+  last_error         String?
   created_at         DateTime @default(now()) @db.Timestamptz(6)
   updated_at         DateTime @updatedAt @db.Timestamptz(6)
 
+  @@index([status, next_retry_at])
   @@map("wallet_outbox")
 }
 
