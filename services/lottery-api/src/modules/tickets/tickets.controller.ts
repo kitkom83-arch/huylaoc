@@ -1,5 +1,14 @@
 import { Body, Controller, Get, Headers, HttpCode, Post, Query } from "@nestjs/common";
-import { adminManualTicketSchema, checkTicketSchema, confirmTicketSchema, createQuoteSchema } from "@lottery/domain";
+import {
+  adminManualTicketSchema,
+  checkTicketSchema,
+  confirmTicketSchema,
+  createQuoteSchema,
+  type AdminManualTicketDto,
+  type CheckTicketDto,
+  type ConfirmTicketDto,
+  type CreateQuoteDto
+} from "@lottery/domain";
 import { parseBody } from "../common/zod.js";
 import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { TicketsService } from "./tickets.service.js";
@@ -29,8 +38,8 @@ export class TicketsController {
 
   @Post("/quotes")
   createQuote(@Body() body: unknown, @Headers("idempotency-key") key: string | undefined) {
-    const parsed = parseBody(createQuoteSchema, body);
-    const dto = { ...parsed, currency_code: parsed.currency_code ?? "THB" };
+    const parsed: CreateQuoteDto = parseBody(createQuoteSchema, body);
+    const dto: CreateQuoteDto = { ...parsed, currency_code: parsed.currency_code ?? "THB" };
     return this.idempotency.run({
       scope: "quotes:create",
       actorRef: dto.user_manual_id ?? dto.wallet_account_ref ?? dto.customer_ref ?? "public",
@@ -43,7 +52,7 @@ export class TicketsController {
 
   @Post("/tickets/confirm")
   confirm(@Body() body: unknown, @Headers("idempotency-key") key: string | undefined) {
-    const dto = parseBody(confirmTicketSchema, body);
+    const dto: ConfirmTicketDto = parseBody(confirmTicketSchema, body);
     return this.idempotency.run({
       scope: "tickets:confirm",
       actorRef: "public",
@@ -59,7 +68,7 @@ export class TicketsController {
   @Post("/tickets/check")
   @HttpCode(200)
   check(@Body() body: unknown) {
-    const dto = parseBody(checkTicketSchema, body);
+    const dto: CheckTicketDto = parseBody(checkTicketSchema, body);
     return this.tickets.checkTicket(dto);
   }
 
@@ -82,8 +91,8 @@ export class TicketsController {
 
   @Post("/admin/manual/tickets")
   manualTicket(@Body() body: unknown, @Headers("idempotency-key") key: string | undefined, @Headers("x-admin-id") actorId: string) {
-    const parsed = parseBody(adminManualTicketSchema, body);
-    const dto = { ...parsed, currency_code: parsed.currency_code ?? "THB" };
+    const parsed: AdminManualTicketDto = parseBody(adminManualTicketSchema, body);
+    const dto: AdminManualTicketDto = { ...parsed, currency_code: parsed.currency_code ?? "THB" };
     return this.idempotency.run({
       scope: "admin:manual:tickets",
       actorRef: actorId,

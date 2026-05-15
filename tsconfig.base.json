@@ -12,13 +12,6 @@
     "resolveJsonModule": true,
     "declaration": true,
     "sourceMap": true,
-    "baseUrl": ".",
-    "paths": {
-      "@lottery/domain": ["packages/domain/src/index.ts"],
-      "@lottery/rules": ["packages/rules/src/index.ts"],
-      "@lottery/ui": ["packages/ui/src/index.ts"],
-      "@lottery/openapi": ["packages/openapi/src/index.ts"],
-      "@lottery/lottery-api": ["services/lottery-api/src/index.ts"]
-    }
+    "baseUrl": "."
   }
 }

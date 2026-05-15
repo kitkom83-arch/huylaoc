@@ -10,6 +10,8 @@ import { ManualCreditController } from "./manual-credit/manual-credit.controller
 import { ManualCreditService } from "./manual-credit/manual-credit.service.js";
 import { CreditLedgerRepository } from "./manual-credit/credit-ledger.repository.js";
 import { HealthController } from "./health/health.controller.js";
+import { OpsController } from "./ops/ops.controller.js";
+import { OpsService } from "./ops/ops.service.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 import { ResultsController } from "./results/results.controller.js";
 import { ResultsService } from "./results/results.service.js";
@@ -22,7 +24,7 @@ import { TicketsService } from "./tickets/tickets.service.js";
 
 @Module({
   imports: [PrismaModule],
-  controllers: [HealthController, DemoPagesController, CatalogController, RoundsController, ResultsController, ManualCreditController, TicketsController],
+  controllers: [HealthController, DemoPagesController, CatalogController, RoundsController, ResultsController, ManualCreditController, TicketsController, OpsController],
   providers: [
     PrismaRepository,
     CatalogService,
@@ -30,6 +32,7 @@ import { TicketsService } from "./tickets/tickets.service.js";
     ResultsService,
     ManualCreditService,
     TicketsService,
+    OpsService,
     IdempotencyService,
     AuditLogRepository,
     CreditLedgerRepository,

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post } from "@nestjs/common";
-import { createRoundSchema, patchRoundSchema } from "@lottery/domain";
+import { createRoundSchema, patchRoundSchema, type CreateRoundDto, type PatchRoundDto } from "@lottery/domain";
 import { parseBody } from "../common/zod.js";
 import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { RoundsService } from "./rounds.service.js";
@@ -18,7 +18,7 @@ export class RoundsController {
 
   @Post("/v1/admin/rounds")
   create(@Body() body: unknown, @Headers("idempotency-key") key: string | undefined, @Headers("x-admin-id") actorId: string) {
-    const dto = parseBody(createRoundSchema, body);
+    const dto: CreateRoundDto = parseBody(createRoundSchema, body);
     return this.idempotency.run({
       scope: "admin:rounds:create",
       actorRef: actorId,
@@ -36,7 +36,7 @@ export class RoundsController {
     @Headers("idempotency-key") key: string | undefined,
     @Headers("x-admin-id") actorId: string
   ) {
-    const dto = parseBody(patchRoundSchema, body);
+    const dto: PatchRoundDto = parseBody(patchRoundSchema, body);
     return this.idempotency.run({
       scope: `admin:rounds:patch:${roundId}`,
       actorRef: actorId,

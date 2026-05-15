@@ -4,3 +4,4 @@ export { CreditLedgerRepository } from "./modules/manual-credit/credit-ledger.re
 export { AuditLogRepository } from "./modules/audit/audit-log.repository.js";
 export { PrismaRepository } from "./modules/store/prisma.repository.js";
 export { PrismaService } from "./modules/prisma/prisma.service.js";
+export { OpsService } from "./modules/ops/ops.service.js";

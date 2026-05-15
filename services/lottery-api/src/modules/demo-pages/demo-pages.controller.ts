@@ -228,21 +228,17 @@ function page(title: string, body: string): string {
     p { color: #d1d5db; line-height: 1.7; }
     a { color: #93c5fd; text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .topbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 22px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 18px 0; }
-    .two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
-    .tile, .card { border: 1px solid #334155; background: #172033; border-radius: 8px; padding: 16px; min-height: 48px; }
-    .card p:first-child { margin-top: 0; }
-    .muted { color: #94a3b8; }
-    .metric { font-size: 15px; color: #cbd5e1; }
-    .badge { display: inline-block; border: 1px solid #64748b; color: #e2e8f0; border-radius: 999px; padding: 4px 10px; font-weight: 700; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 18px 0; }
+    .tile { border: 1px solid #374151; background: #1f2937; border-radius: 8px; padding: 14px 16px; min-height: 44px; }
+    .muted { color: #9ca3af; }
+    .badge { display: inline-block; border: 1px solid #f59e0b; color: #fbbf24; border-radius: 999px; padding: 4px 10px; font-weight: 700; }
     .badge.done { border-color: #22c55e; color: #86efac; }
-    .badge.current { border-color: #f59e0b; color: #fbbf24; }
-    .badge.remaining { border-color: #60a5fa; color: #bfdbfe; }
-    .badge.notice { border-color: #ef4444; color: #fca5a5; }
-    code { display: block; white-space: pre-wrap; overflow-wrap: anywhere; background: #020617; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #e5e7eb; }
-    .endpoint-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-    .endpoint-list code { padding: 9px 10px; }
+    .badge.current { border-color: #38bdf8; color: #7dd3fc; }
+    .badge.remaining { border-color: #f59e0b; color: #fbbf24; }
+    .phase-list { display: grid; gap: 10px; margin: 18px 0; }
+    .phase { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #374151; background: #1f2937; border-radius: 8px; padding: 12px 14px; }
+    .phase strong { font-size: 16px; }
+    code { display: block; white-space: pre-wrap; overflow-wrap: anywhere; background: #030712; border: 1px solid #374151; border-radius: 8px; padding: 14px; color: #e5e7eb; }
     ul { padding-left: 20px; line-height: 1.9; }
     table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 8px; border: 1px solid #334155; }
     th, td { text-align: left; border-bottom: 1px solid #334155; padding: 12px; vertical-align: top; }
@@ -315,11 +311,82 @@ export class DemoPagesController {
         <a class="tile" href="/demo/customer-la">/demo/customer-la</a>
         <a class="tile" href="/demo/backoffice">/demo/backoffice</a>
         <a class="tile" href="/demo/project-overview">/demo/project-overview</a>
-        <a class="tile" href="/demo/settlement-center">/demo/settlement-center</a>
       </div>
       <h2>Prisma Studio</h2>
       <p class="muted">ใช้คำสั่งนี้เพื่อเปิดดูข้อมูลในฐานข้อมูลระหว่างทดสอบ</p>
       <code>${prismaStudioCommand}</code>`
+    );
+  }
+
+  @Get("/demo/project-overview")
+  @Header("content-type", "text/html; charset=utf-8")
+  projectOverview(): string {
+    return page(
+      "ภาพรวมโปรเจกต์ Lottery Game Engine",
+      `<h1>ภาพรวมโปรเจกต์ Lottery Game Engine</h1>
+      <p class="muted">Phase 1.2 overview page for local review. This page summarizes current scope without adding payment, wallet, payout, settlement, or new bet-type behavior.</p>
+
+      <h2>Current System Status</h2>
+      <div class="phase-list">
+        <div class="phase"><strong>Phase 0</strong><span class="badge done">Done</span></div>
+        <div class="phase"><strong>Phase 0.5</strong><span class="badge done">Done</span></div>
+        <div class="phase"><strong>Phase 1.0</strong><span class="badge done">Done</span></div>
+        <div class="phase"><strong>Phase 1.1</strong><span class="badge done">Done</span></div>
+        <div class="phase"><strong>Phase 1.2</strong><span class="badge current">Current</span></div>
+        <div class="phase"><strong>Phase 1.5</strong><span class="badge remaining">Remaining</span></div>
+        <div class="phase"><strong>Phase 1.6</strong><span class="badge remaining">Remaining</span></div>
+        <div class="phase"><strong>Phase 2.0</strong><span class="badge remaining">Remaining</span></div>
+        <div class="phase"><strong>Phase 2.1</strong><span class="badge remaining">Remaining</span></div>
+        <div class="phase"><strong>Phase 2.2</strong><span class="badge remaining">Remaining</span></div>
+        <div class="phase"><strong>Phase 3.0</strong><span class="badge remaining">Remaining</span></div>
+      </div>
+
+      <h2>Completed Work</h2>
+      <ul>
+        <li>Static demo pages for customer, Lao customer, and backoffice review.</li>
+        <li>Health endpoint and P0 catalog visibility.</li>
+        <li>Round, result, manual credit, quote, ticket, audit, and idempotency foundations.</li>
+        <li>Manual-credit ticket lifecycle and settlement preflight boundaries.</li>
+      </ul>
+
+      <h2>Remaining Work</h2>
+      <ul>
+        <li>Finish later phase work only after Phase 1.2 acceptance.</li>
+        <li>Keep real payment, real wallet integration, payout, full settlement, and extra bet types out of Phase 1.2.</li>
+      </ul>
+
+      <h2>API Inventory</h2>
+      <ul>
+        <li>GET /api/health</li>
+        <li>GET /v1/catalog/bet-types</li>
+        <li>GET /v1/rounds/current</li>
+        <li>GET /v1/results/latest</li>
+        <li>POST /v1/admin/rounds</li>
+        <li>PATCH /v1/admin/rounds/:round_id</li>
+        <li>POST /v1/admin/results</li>
+        <li>POST /v1/admin/manual/users</li>
+        <li>POST /v1/admin/manual/credits/topup</li>
+        <li>POST /v1/admin/manual/credits/deduct</li>
+        <li>POST /v1/quotes</li>
+        <li>POST /v1/tickets/confirm</li>
+        <li>POST /v1/tickets/check</li>
+        <li>GET /v1/admin/tickets</li>
+        <li>POST /v1/admin/manual/tickets</li>
+      </ul>
+
+      <h2>Local Commands</h2>
+      <code>pnpm build
+pnpm check
+pnpm test
+pnpm -w run dev:api
+${prismaStudioCommand}</code>
+
+      <h2>Important Safety Notes</h2>
+      <ul>
+        <li>Do not add real credentials, hardcoded secrets, or production payment behavior.</li>
+        <li>Do not log plaintext tokens, passwords, secrets, or check-token values.</li>
+        <li>Do not add deposit, withdraw, payout, full settlement, real wallet integration, TWO_BOX, THREE_BOX, HIGH_LOW, or ODD_EVEN in Phase 1.2.</li>
+      </ul>`
     );
   }
 

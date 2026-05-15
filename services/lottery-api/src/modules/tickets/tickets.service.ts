@@ -7,28 +7,14 @@ import {
   UnprocessableEntityException
 } from "@nestjs/common";
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { betTypeDigits, type BetTypeCatalogEntry, type BetTypeCode } from "@lottery/domain";
+import { betTypeDigits, type AdminManualTicketDto, type BetTypeCatalogEntry, type BetTypeCode, type CheckTicketDto, type ConfirmTicketDto, type CreateQuoteDto, type QuoteItemDto } from "@lottery/domain";
 import { Prisma, type Quote, type Ticket, type TicketItem } from "@prisma/client";
 import { AuditLogRepository } from "../audit/audit-log.repository.js";
 import { CreditLedgerRepository } from "../manual-credit/credit-ledger.repository.js";
 import { PrismaRepository, type DbClient } from "../store/prisma.repository.js";
 
-type QuoteItemInput = {
-  bet_type: BetTypeCode;
-  selection: string;
-  stake: number;
-};
-
-type CreateQuoteInput = {
-  round_id: string;
-  payment_mode: "MANUAL_CREDIT" | "EXTERNAL_WALLET";
-  currency_code: string;
-  user_manual_id?: string;
-  customer_ref?: string;
-  wallet_account_ref?: string;
-  external_txn_ref?: string;
-  items: QuoteItemInput[];
-};
+type QuoteItemInput = QuoteItemDto;
+type CreateQuoteInput = CreateQuoteDto;
 
 type NormalizedQuoteItem = {
   line_no: number;
@@ -190,11 +176,11 @@ export class TicketsService {
     return quoteResponse(quote);
   }
 
-  async confirmTicket(input: { quote_id: string }, idempotency: { scope: string; key: string }, db: Prisma.TransactionClient): Promise<Record<string, unknown>> {
+  async confirmTicket(input: ConfirmTicketDto, idempotency: { scope: string; key: string }, db: Prisma.TransactionClient): Promise<Record<string, unknown>> {
     return this.confirmQuote(input.quote_id, idempotency, { actor_type: "CUSTOMER", actor_id: "public" }, db);
   }
 
-  async createManualTicket(input: { user_manual_id: string; round_id: string; currency_code: string; customer_ref?: string; items: QuoteItemInput[]; note?: string }, actorId: string, idempotency: { scope: string; key: string }, db: Prisma.TransactionClient): Promise<Record<string, unknown>> {
+  async createManualTicket(input: AdminManualTicketDto, actorId: string, idempotency: { scope: string; key: string }, db: Prisma.TransactionClient): Promise<Record<string, unknown>> {
     const quote = await this.createQuoteRecord(
       {
         round_id: input.round_id,
@@ -221,7 +207,7 @@ export class TicketsService {
     return response;
   }
 
-  async checkTicket(input: { ticket_no: string; public_check_token: string }): Promise<Record<string, unknown>> {
+  async checkTicket(input: CheckTicketDto): Promise<Record<string, unknown>> {
     const ticket = await this.repo.client().ticket.findUnique({
       where: { ticket_no: input.ticket_no },
       include: { round: { select: { round_code: true } }, items: { orderBy: { line_no: "asc" } } }
