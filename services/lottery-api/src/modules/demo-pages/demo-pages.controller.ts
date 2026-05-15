@@ -228,10 +228,22 @@ function page(title: string, body: string): string {
     p { color: #d1d5db; line-height: 1.7; }
     a { color: #93c5fd; text-decoration: none; }
     a:hover { text-decoration: underline; }
+    .hero { margin-bottom: 26px; }
+    .hero .eyebrow { margin: 0 0 8px; color: #7dd3fc; font-weight: 800; text-transform: uppercase; letter-spacing: 0; }
+    .hero p { max-width: 860px; margin: 0; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 18px 0; }
+    .summary-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+    .card { border: 1px solid #374151; background: #111827; border-radius: 8px; padding: 16px; }
     .tile { border: 1px solid #374151; background: #1f2937; border-radius: 8px; padding: 14px 16px; min-height: 44px; }
+    .metric { margin: 0; color: #f8fafc; font-size: 26px; font-weight: 800; line-height: 1.2; }
+    .metric-label { margin: 0 0 10px; color: #cbd5e1; font-weight: 700; line-height: 1.35; }
     .muted { color: #9ca3af; }
     .badge { display: inline-block; border: 1px solid #f59e0b; color: #fbbf24; border-radius: 999px; padding: 4px 10px; font-weight: 700; }
+    .badge.won { border-color: #22c55e; color: #86efac; }
+    .badge.lost { border-color: #94a3b8; color: #cbd5e1; }
+    .badge.skipped { border-color: #f59e0b; color: #fbbf24; }
+    .badge.mode { border-color: #38bdf8; color: #7dd3fc; }
     .badge.done { border-color: #22c55e; color: #86efac; }
     .badge.current { border-color: #38bdf8; color: #7dd3fc; }
     .badge.remaining { border-color: #f59e0b; color: #fbbf24; }
@@ -246,6 +258,12 @@ function page(title: string, body: string): string {
     tr:last-child td { border-bottom: 0; }
     input { width: 100%; margin-top: 8px; padding: 10px 12px; border-radius: 8px; border: 1px solid #475569; background: #020617; color: #e2e8f0; }
     label { display: block; margin-top: 10px; color: #cbd5e1; }
+    @media (max-width: 760px) {
+      main { padding: 28px 14px 44px; }
+      h1 { font-size: 28px; }
+      .two-col { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; white-space: nowrap; }
+    }
   </style>
 </head>
 <body>
@@ -398,64 +416,85 @@ export class DemoPagesController {
   settlementCenter(): string {
     return page(
       "Settlement Center Demo",
-      `<h1>ศูนย์ตรวจผลและจ่ายรางวัล</h1>
-      <p class="muted">Settlement Center Demo</p>
+      `<section class="hero">
+        <p class="eyebrow">Settlement Center Demo</p>
+        <h1>ศูนย์ตรวจผลและจ่ายรางวัล</h1>
+        <p class="muted">หน้าเดโมสำหรับดูภาพรวมการตรวจบิล คัดกรองบิลที่พร้อมตรวจ และเตรียมจ่ายรางวัล</p>
+      </section>
 
       <h2>Summary Cards</h2>
-      <div class="grid">
-        <section class="card"><h3>Eligible Tickets</h3><p class="metric">Tickets that passed funding and preflight checks.</p></section>
-        <section class="card"><h3>Result Posted</h3><p class="metric">Round result is available before settlement runs.</p></section>
-        <section class="card"><h3>Payout Queue</h3><p class="metric">Winning tickets are prepared for credit handling.</p></section>
+      <div class="grid summary-grid">
+        <section class="card"><p class="metric-label">งาน Settlement ทั้งหมด</p><p class="metric">3</p></section>
+        <section class="card"><p class="metric-label">บิลที่พร้อมตรวจ / Eligible Tickets</p><p class="metric">128</p></section>
+        <section class="card"><p class="metric-label">บิลที่ถูกข้าม / Skipped Tickets</p><p class="metric">12</p></section>
+        <section class="card"><p class="metric-label">บิลถูกรางวัล / Winners</p><p class="metric">9</p></section>
+        <section class="card"><p class="metric-label">บิลไม่ถูกรางวัล / Losers</p><p class="metric">119</p></section>
+        <section class="card"><p class="metric-label">ยอดจ่ายรวม / Payout Total</p><p class="metric">15,420.00</p></section>
+        <section class="card"><p class="metric-label">Manual Payout / Manual Credit Paid</p><p class="metric">8,200.00</p></section>
+        <section class="card"><p class="metric-label">Wallet Outbox Credit / Wallet Credit Pending</p><p class="metric">7,220.00</p></section>
       </div>
 
       <h2>Settlement Flow</h2>
       ${list([
-        "Load the posted round result.",
-        "Find Eligible Tickets for the settled round.",
-        "Compare ticket items with the result outcome.",
-        "Mark losing tickets closed and winning tickets ready for payout.",
-        "Create the correct credit event for each winning funding mode."
+        "รับผลรางวัล 6 หลัก",
+        "แตกผลเป็น 1/2/3/4/5/6 ตัวท้าย",
+        "โหลดบิลที่ funding สำเร็จเท่านั้น",
+        "ตรวจ ticket_items ว่าชนะหรือแพ้",
+        "จ่าย Manual Credit หรือสร้าง Wallet Credit Outbox"
       ])}
 
       <h2>Eligibility Rules</h2>
-      ${list([
-        "Ticket status must be CONFIRMED.",
-        "Funding must be completed before result settlement.",
-        "Tickets with failed, unknown, or pending wallet debit are skipped.",
-        "Settlement should be idempotent and avoid duplicate payouts."
-      ])}
+      <table>
+        <thead>
+          <tr><th>Eligible</th><th>Skipped</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${list(["ticket.status = CONFIRMED", "settlement_status = PENDING", "funding_status = DEBITED or SUCCEEDED"])}</td>
+            <td>${list(["funding_status = PENDING", "funding_status = FAILED", "funding_status = UNKNOWN", "ticket already settled", "rejected/cancelled ticket"])}</td>
+          </tr>
+        </tbody>
+      </table>
 
       <h2>Result Example</h2>
       <table>
         <tbody>
-          <tr><th>Round</th><td>DEMO-ROUND-001</td></tr>
-          <tr><th>Result</th><td>123456</td></tr>
-          <tr><th>Outcome</th><td>2 ตัวตรง = 56, 3 ตัวตรง = 456</td></tr>
+          <tr><th>result_6d</th><td>255480</td></tr>
+          <tr><th>1 ตัวท้าย</th><td>1 ตัวท้าย = 0</td></tr>
+          <tr><th>2 ตัวตรง</th><td>2 ตัวตรง = 80</td></tr>
+          <tr><th>3 ตัวตรง</th><td>3 ตัวตรง = 480</td></tr>
+          <tr><th>4 ตัวตรง</th><td>4 ตัวตรง = 5480</td></tr>
+          <tr><th>5 ตัวตรง</th><td>5 ตัวตรง = 55480</td></tr>
+          <tr><th>6 ตัวตรง</th><td>6 ตัวตรง = 255480</td></tr>
         </tbody>
       </table>
 
       <h2>Ticket Settlement Example</h2>
       <table>
         <thead>
-          <tr><th>Ticket</th><th>Bet Type</th><th>Pick</th><th>Status</th></tr>
+          <tr><th>ticket_no</th><th>mode</th><th>funding</th><th>selection</th><th>result</th><th>status</th><th>payout</th></tr>
         </thead>
         <tbody>
-          <tr><td>DEMO-TICKET-1001</td><td>TWO_STRAIGHT</td><td>56</td><td>WON</td></tr>
-          <tr><td>DEMO-TICKET-1002</td><td>THREE_STRAIGHT</td><td>111</td><td>LOST</td></tr>
+          <tr><td>L260512000123</td><td><span class="badge mode">MANUAL_CREDIT</span></td><td>DEBITED</td><td>TWO_STRAIGHT 80</td><td>tail2 80</td><td><span class="badge won">WON</span></td><td>1,200.00</td></tr>
+          <tr><td>L260512000124</td><td><span class="badge mode">EXTERNAL_WALLET</span></td><td>SUCCEEDED</td><td>THREE_STRAIGHT 123</td><td>tail3 480</td><td><span class="badge lost">LOST</span></td><td>0.00</td></tr>
+          <tr><td>L260512000125</td><td><span class="badge mode">EXTERNAL_WALLET</span></td><td>PENDING</td><td>TWO_STRAIGHT 80</td><td>skipped</td><td><span class="badge skipped">SKIPPED</span></td><td>-</td></tr>
         </tbody>
       </table>
 
       <h2>Payout Handling</h2>
       <div class="two-col">
-        <section class="card"><h3>Manual Credit</h3><p>Create a <strong>PAYOUT_CREDIT</strong> ledger entry for manual-credit winners.</p></section>
-        <section class="card"><h3>External Wallet</h3><p>Create a <strong>WALLET_CREDIT</strong> outbox event for external-wallet winners.</p></section>
+        <section class="card"><h3>Manual Credit</h3>${list(["Insert PAYOUT_CREDIT ledger", "Increase credit_accounts.balance", "Write audit log", "Must not pay twice"])}</section>
+        <section class="card"><h3>External Wallet</h3>${list(["Create WALLET_CREDIT outbox", "Do not call real wallet in this phase", "Retry safely", "Must not create duplicate outbox"])}</section>
       </div>
 
       <h2>Safety Notes</h2>
       ${list([
-        "This page is UI-only documentation for local demo monitoring.",
-        "It does not execute settlement, wallet, deposit, withdraw, or payout mutations.",
-        "Use settlement and wallet workers only through their tested backend paths."
+        "No real wallet call",
+        "No deposit/withdraw",
+        "No real payment processing",
+        "Settlement must be idempotent",
+        "Payout must not duplicate on retry",
+        "18+ notice"
       ])}
 
       <h2>Links</h2>
@@ -463,6 +502,7 @@ export class DemoPagesController {
         <a class="tile" href="/">/</a>
         <a class="tile" href="/demo/project-overview">/demo/project-overview</a>
         <a class="tile" href="/demo/backoffice">/demo/backoffice</a>
+        <a class="tile" href="/api/health">/api/health</a>
       </div>`
     );
   }

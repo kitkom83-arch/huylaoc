@@ -121,6 +121,10 @@ describe("lottery-api P0 foundation", () => {
     expect(response.text).toContain("Eligible Tickets");
     expect(response.text).toContain("PAYOUT_CREDIT");
     expect(response.text).toContain("WALLET_CREDIT");
+    expect(response.text).toContain("/api/health");
+    expect(response.text).toContain("255480");
+    expect(response.text).toContain("Manual Credit Paid");
+    expect(response.text).toContain("Wallet Credit Pending");
   });
 
   it("GET /v1/catalog/bet-types returns P0 bet types only", async () => {
