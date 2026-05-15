@@ -95,6 +95,32 @@ describe("lottery-api P0 foundation", () => {
     const response = await request(app.getHttpServer()).get("/demo/backoffice");
     expect(response.status).toBe(200);
     expect(response.text).toContain("Backoffice Demo");
+    expect(response.text).toContain('href="/demo/settlement-center"');
+  });
+
+  it("GET /demo/project-overview returns the project overview page", async () => {
+    const response = await request(app.getHttpServer()).get("/demo/project-overview");
+    expect(response.status).toBe(200);
+    expect(response.text).toContain("ภาพรวมโปรเจกต์ Lottery Game Engine");
+    expect(response.text).toContain("Phase 0");
+    expect(response.text).toContain("Phase 0.5");
+    expect(response.text).toContain("Phase 1.0");
+    expect(response.text).toContain("Phase 1.1");
+    expect(response.text).toContain("Phase 1.2");
+    expect(response.text).toContain("Phase 1.5");
+    expect(response.text).toContain("Completed Work");
+    expect(response.text).toContain("Remaining Work");
+    expect(response.text).toContain('href="/demo/settlement-center"');
+  });
+
+  it("GET /demo/settlement-center returns the settlement center demo page", async () => {
+    const response = await request(app.getHttpServer()).get("/demo/settlement-center");
+    expect(response.status).toBe(200);
+    expect(response.text).toContain("Settlement Center Demo");
+    expect(response.text).toContain("ศูนย์ตรวจผลและจ่ายรางวัล");
+    expect(response.text).toContain("Eligible Tickets");
+    expect(response.text).toContain("PAYOUT_CREDIT");
+    expect(response.text).toContain("WALLET_CREDIT");
   });
 
   it("GET /v1/catalog/bet-types returns P0 bet types only", async () => {
