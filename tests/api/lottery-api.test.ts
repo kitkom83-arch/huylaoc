@@ -51,6 +51,7 @@ describe("lottery-api P0 foundation", () => {
     expect(response.status).toBe(200);
     expect(response.text).toContain("Lottery Game Engine Demo");
     expect(response.text).toContain("/demo/project-overview");
+    expect(response.text).toContain('href="/demo/wallet-outbox-monitor"');
   });
 
   it("GET /demo/project-overview returns the project overview page", async () => {
@@ -77,6 +78,7 @@ describe("lottery-api P0 foundation", () => {
     expect(response.text).toContain("Done");
     expect(response.text).toContain("Current");
     expect(response.text).toContain("Remaining");
+    expect(response.text).toContain('href="/demo/wallet-outbox-monitor"');
   });
 
   it("GET /demo/customer-th returns the Thai customer demo page", async () => {
@@ -96,6 +98,7 @@ describe("lottery-api P0 foundation", () => {
     expect(response.status).toBe(200);
     expect(response.text).toContain("Backoffice Demo");
     expect(response.text).toContain('href="/demo/settlement-center"');
+    expect(response.text).toContain('href="/demo/wallet-outbox-monitor"');
   });
 
   it("GET /demo/project-overview returns the project overview page", async () => {
@@ -111,6 +114,7 @@ describe("lottery-api P0 foundation", () => {
     expect(response.text).toContain("Completed Work");
     expect(response.text).toContain("Remaining Work");
     expect(response.text).toContain('href="/demo/settlement-center"');
+    expect(response.text).toContain('href="/demo/wallet-outbox-monitor"');
   });
 
   it("GET /demo/settlement-center returns the settlement center demo page", async () => {
@@ -125,6 +129,19 @@ describe("lottery-api P0 foundation", () => {
     expect(response.text).toContain("255480");
     expect(response.text).toContain("Manual Credit Paid");
     expect(response.text).toContain("Wallet Credit Pending");
+    expect(response.text).toContain('href="/demo/wallet-outbox-monitor"');
+  });
+
+  it("GET /demo/wallet-outbox-monitor returns the wallet outbox monitor demo page", async () => {
+    const response = await request(app.getHttpServer()).get("/demo/wallet-outbox-monitor");
+    expect(response.status).toBe(200);
+    expect(response.text).toContain("Wallet Outbox Monitor Demo");
+    expect(response.text).toContain("ศูนย์ติดตาม Wallet Outbox");
+    expect(response.text).toContain("WALLET_CREDIT Pending");
+    expect(response.text).toContain("Duplicate Blocked");
+    expect(response.text).toContain("Retry Safety");
+    expect(response.text).toContain("DUPLICATE_BLOCKED");
+    expect(response.text).toContain("/demo/settlement-center");
   });
 
   it("GET /v1/catalog/bet-types returns P0 bet types only", async () => {

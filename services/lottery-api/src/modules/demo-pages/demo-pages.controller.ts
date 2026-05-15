@@ -244,6 +244,11 @@ function page(title: string, body: string): string {
     .badge.lost { border-color: #94a3b8; color: #cbd5e1; }
     .badge.skipped { border-color: #f59e0b; color: #fbbf24; }
     .badge.mode { border-color: #38bdf8; color: #7dd3fc; }
+    .badge.pending { border-color: #f59e0b; color: #fbbf24; }
+    .badge.processing { border-color: #38bdf8; color: #7dd3fc; }
+    .badge.sent { border-color: #22c55e; color: #86efac; }
+    .badge.failed { border-color: #ef4444; color: #fca5a5; }
+    .badge.duplicate { border-color: #a855f7; color: #d8b4fe; }
     .badge.done { border-color: #22c55e; color: #86efac; }
     .badge.current { border-color: #38bdf8; color: #7dd3fc; }
     .badge.remaining { border-color: #f59e0b; color: #fbbf24; }
@@ -330,6 +335,7 @@ export class DemoPagesController {
         <a class="tile" href="/demo/backoffice">/demo/backoffice</a>
         <a class="tile" href="/demo/project-overview">/demo/project-overview</a>
         <a class="tile" href="/demo/settlement-center">/demo/settlement-center</a>
+        <a class="tile" href="/demo/wallet-outbox-monitor">/demo/wallet-outbox-monitor</a>
       </div>
       <h2>Prisma Studio</h2>
       <p class="muted">ใช้คำสั่งนี้เพื่อเปิดดูข้อมูลในฐานข้อมูลระหว่างทดสอบ</p>
@@ -406,6 +412,7 @@ export class DemoPagesController {
       <h2>Links</h2>
       <div class="grid">
         <a class="tile" href="/demo/settlement-center">/demo/settlement-center</a>
+        <a class="tile" href="/demo/wallet-outbox-monitor">/demo/wallet-outbox-monitor</a>
       </div>
       <p><a href="/">Back to /</a></p>`
     );
@@ -502,6 +509,102 @@ export class DemoPagesController {
         <a class="tile" href="/">/</a>
         <a class="tile" href="/demo/project-overview">/demo/project-overview</a>
         <a class="tile" href="/demo/backoffice">/demo/backoffice</a>
+        <a class="tile" href="/demo/wallet-outbox-monitor">/demo/wallet-outbox-monitor</a>
+        <a class="tile" href="/api/health">/api/health</a>
+      </div>`
+    );
+  }
+
+  @Get("/demo/wallet-outbox-monitor")
+  @Header("content-type", "text/html; charset=utf-8")
+  walletOutboxMonitor(): string {
+    return page(
+      "Wallet Outbox Monitor Demo",
+      `<section class="hero">
+        <p class="eyebrow">Wallet Outbox Monitor Demo</p>
+        <h1>ศูนย์ติดตาม Wallet Outbox</h1>
+        <p class="muted">หน้าเดโมสำหรับดูสถานะรายการจ่ายรางวัลผ่าน WALLET_CREDIT outbox ก่อนส่งไปยังกระเป๋าภายนอก</p>
+      </section>
+
+      <h2>Summary Cards</h2>
+      <div class="grid summary-grid">
+        <section class="card"><p class="metric-label">Outbox ทั้งหมด</p><p class="metric">42</p></section>
+        <section class="card"><p class="metric-label">WALLET_CREDIT Pending</p><p class="metric">7</p></section>
+        <section class="card"><p class="metric-label">กำลังประมวลผล</p><p class="metric">2</p></section>
+        <section class="card"><p class="metric-label">ส่งสำเร็จ / SENT</p><p class="metric">31</p></section>
+        <section class="card"><p class="metric-label">ส่งไม่สำเร็จ / FAILED</p><p class="metric">2</p></section>
+        <section class="card"><p class="metric-label">Retry Queue</p><p class="metric">4</p></section>
+        <section class="card"><p class="metric-label">ยอดเครดิตรอส่ง</p><p class="metric">7,220.00</p></section>
+        <section class="card"><p class="metric-label">Duplicate Blocked</p><p class="metric">3</p></section>
+      </div>
+
+      <h2>Wallet Outbox Flow</h2>
+      ${list([
+        "Settlement พบผู้ชนะ EXTERNAL_WALLET",
+        "สร้าง WALLET_CREDIT outbox",
+        "Worker โหลดรายการ PENDING",
+        "ส่งเครดิตไป external wallet แบบ retry-safe",
+        "อัปเดตสถานะ SENT หรือ FAILED"
+      ])}
+
+      <h2>Outbox Status Table</h2>
+      <table>
+        <thead>
+          <tr><th>status</th><th>meaning</th><th>action</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="badge pending">PENDING</span></td><td>รอ worker หยิบไปส่ง</td><td>wait for retry window</td></tr>
+          <tr><td><span class="badge processing">PROCESSING</span></td><td>worker กำลังทำงาน</td><td>lock item</td></tr>
+          <tr><td><span class="badge sent">SENT</span></td><td>ส่งสำเร็จแล้ว</td><td>no further action</td></tr>
+          <tr><td><span class="badge failed">FAILED</span></td><td>ส่งไม่สำเร็จ</td><td>retry or manual review</td></tr>
+          <tr><td><span class="badge duplicate">DUPLICATE_BLOCKED</span></td><td>กันรายการซ้ำ</td><td>keep audit trail</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Sample Outbox Items</h2>
+      <table>
+        <thead>
+          <tr><th>outbox_id</th><th>type</th><th>ticket_no</th><th>account_ref</th><th>amount</th><th>status</th><th>retry_count</th><th>next_retry</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>out_0001</td><td>WALLET_CREDIT</td><td>L260512000124</td><td>wallet_u_10001</td><td>1,200.00</td><td><span class="badge pending">PENDING</span></td><td>0</td><td>now</td></tr>
+          <tr><td>out_0002</td><td>WALLET_CREDIT</td><td>L260512000130</td><td>wallet_u_10008</td><td>5,000.00</td><td><span class="badge sent">SENT</span></td><td>1</td><td>-</td></tr>
+          <tr><td>out_0003</td><td>WALLET_CREDIT</td><td>L260512000141</td><td>wallet_u_10021</td><td>720.00</td><td><span class="badge failed">FAILED</span></td><td>3</td><td>manual review</td></tr>
+          <tr><td>out_0004</td><td>WALLET_CREDIT</td><td>L260512000155</td><td>wallet_u_10033</td><td>300.00</td><td><span class="badge processing">PROCESSING</span></td><td>0</td><td>locked</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Retry & Idempotency</h2>
+      <div class="two-col">
+        <section class="card"><h3>Retry Safety</h3>${list(["Retry only pending/failed items", "Use operation_ref for idempotency", "Do not create duplicate wallet credits", "Keep retry_count and last_error"])}</section>
+        <section class="card"><h3>Duplicate Prevention</h3>${list(["Unique operation_ref", "One payout per winning ticket", "Do not re-credit SENT item", "Audit every retry attempt"])}</section>
+      </div>
+
+      <h2>External Wallet Safety</h2>
+      ${list([
+        "Demo does not call real wallet",
+        "No real payment processing",
+        "No deposit/withdraw",
+        "No credentials shown",
+        "Wallet failures must be retry-safe",
+        "External wallet response can be delayed or unknown",
+        "18+ notice"
+      ])}
+
+      <h2>Relationship with Settlement Center</h2>
+      ${list([
+        "Settlement Center decides winner/loser",
+        "Manual winners get PAYOUT_CREDIT ledger",
+        "External wallet winners create WALLET_CREDIT outbox",
+        "Wallet Outbox Monitor tracks WALLET_CREDIT delivery status"
+      ])}
+
+      <h2>Links</h2>
+      <div class="grid">
+        <a class="tile" href="/">Back to /</a>
+        <a class="tile" href="/demo/project-overview">/demo/project-overview</a>
+        <a class="tile" href="/demo/backoffice">/demo/backoffice</a>
+        <a class="tile" href="/demo/settlement-center">/demo/settlement-center</a>
         <a class="tile" href="/api/health">/api/health</a>
       </div>`
     );
@@ -553,11 +656,13 @@ http://localhost:3000/demo/project-overview
 http://localhost:3000/demo/customer-th
 http://localhost:3000/demo/customer-la
 http://localhost:3000/demo/backoffice
-http://localhost:3000/demo/settlement-center</code>
+http://localhost:3000/demo/settlement-center
+http://localhost:3000/demo/wallet-outbox-monitor</code>
 
       <h2>Demo Links</h2>
       <div class="grid">
         <a class="tile" href="/demo/settlement-center">/demo/settlement-center</a>
+        <a class="tile" href="/demo/wallet-outbox-monitor">/demo/wallet-outbox-monitor</a>
       </div>
 
       <h2>Important Safety Notes</h2>
