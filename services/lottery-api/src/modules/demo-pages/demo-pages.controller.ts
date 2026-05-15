@@ -311,82 +311,11 @@ export class DemoPagesController {
         <a class="tile" href="/demo/customer-la">/demo/customer-la</a>
         <a class="tile" href="/demo/backoffice">/demo/backoffice</a>
         <a class="tile" href="/demo/project-overview">/demo/project-overview</a>
+        <a class="tile" href="/demo/settlement-center">/demo/settlement-center</a>
       </div>
       <h2>Prisma Studio</h2>
       <p class="muted">ใช้คำสั่งนี้เพื่อเปิดดูข้อมูลในฐานข้อมูลระหว่างทดสอบ</p>
       <code>${prismaStudioCommand}</code>`
-    );
-  }
-
-  @Get("/demo/project-overview")
-  @Header("content-type", "text/html; charset=utf-8")
-  projectOverview(): string {
-    return page(
-      "ภาพรวมโปรเจกต์ Lottery Game Engine",
-      `<h1>ภาพรวมโปรเจกต์ Lottery Game Engine</h1>
-      <p class="muted">Phase 1.2 overview page for local review. This page summarizes current scope without adding payment, wallet, payout, settlement, or new bet-type behavior.</p>
-
-      <h2>Current System Status</h2>
-      <div class="phase-list">
-        <div class="phase"><strong>Phase 0</strong><span class="badge done">Done</span></div>
-        <div class="phase"><strong>Phase 0.5</strong><span class="badge done">Done</span></div>
-        <div class="phase"><strong>Phase 1.0</strong><span class="badge done">Done</span></div>
-        <div class="phase"><strong>Phase 1.1</strong><span class="badge done">Done</span></div>
-        <div class="phase"><strong>Phase 1.2</strong><span class="badge current">Current</span></div>
-        <div class="phase"><strong>Phase 1.5</strong><span class="badge remaining">Remaining</span></div>
-        <div class="phase"><strong>Phase 1.6</strong><span class="badge remaining">Remaining</span></div>
-        <div class="phase"><strong>Phase 2.0</strong><span class="badge remaining">Remaining</span></div>
-        <div class="phase"><strong>Phase 2.1</strong><span class="badge remaining">Remaining</span></div>
-        <div class="phase"><strong>Phase 2.2</strong><span class="badge remaining">Remaining</span></div>
-        <div class="phase"><strong>Phase 3.0</strong><span class="badge remaining">Remaining</span></div>
-      </div>
-
-      <h2>Completed Work</h2>
-      <ul>
-        <li>Static demo pages for customer, Lao customer, and backoffice review.</li>
-        <li>Health endpoint and P0 catalog visibility.</li>
-        <li>Round, result, manual credit, quote, ticket, audit, and idempotency foundations.</li>
-        <li>Manual-credit ticket lifecycle and settlement preflight boundaries.</li>
-      </ul>
-
-      <h2>Remaining Work</h2>
-      <ul>
-        <li>Finish later phase work only after Phase 1.2 acceptance.</li>
-        <li>Keep real payment, real wallet integration, payout, full settlement, and extra bet types out of Phase 1.2.</li>
-      </ul>
-
-      <h2>API Inventory</h2>
-      <ul>
-        <li>GET /api/health</li>
-        <li>GET /v1/catalog/bet-types</li>
-        <li>GET /v1/rounds/current</li>
-        <li>GET /v1/results/latest</li>
-        <li>POST /v1/admin/rounds</li>
-        <li>PATCH /v1/admin/rounds/:round_id</li>
-        <li>POST /v1/admin/results</li>
-        <li>POST /v1/admin/manual/users</li>
-        <li>POST /v1/admin/manual/credits/topup</li>
-        <li>POST /v1/admin/manual/credits/deduct</li>
-        <li>POST /v1/quotes</li>
-        <li>POST /v1/tickets/confirm</li>
-        <li>POST /v1/tickets/check</li>
-        <li>GET /v1/admin/tickets</li>
-        <li>POST /v1/admin/manual/tickets</li>
-      </ul>
-
-      <h2>Local Commands</h2>
-      <code>pnpm build
-pnpm check
-pnpm test
-pnpm -w run dev:api
-${prismaStudioCommand}</code>
-
-      <h2>Important Safety Notes</h2>
-      <ul>
-        <li>Do not add real credentials, hardcoded secrets, or production payment behavior.</li>
-        <li>Do not log plaintext tokens, passwords, secrets, or check-token values.</li>
-        <li>Do not add deposit, withdraw, payout, full settlement, real wallet integration, TWO_BOX, THREE_BOX, HIGH_LOW, or ODD_EVEN in Phase 1.2.</li>
-      </ul>`
     );
   }
 
