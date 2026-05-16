@@ -6,6 +6,17 @@ import { CreditLedgerRepository } from "./credit-ledger.repository.js";
 import { PrismaRepository } from "../store/prisma.repository.js";
 import type { ManualUserRecord } from "../store/records.js";
 
+type ManualUserStatus = "ACTIVE" | "SUSPENDED" | "CLOSED";
+type StoredManualUserStatus = "ENABLED" | "DISABLED";
+
+export type ManualUserStatusResponse = {
+  user_manual_id: string;
+  username: string;
+  display_name: string;
+  status: ManualUserStatus;
+  updated_at: string;
+};
+
 @Injectable()
 export class ManualCreditService {
   constructor(
@@ -42,6 +53,37 @@ export class ManualCreditService {
 
   listLedger() {
     return this.ledger.list();
+  }
+
+  updateUserStatus(input: { user_id: string; status: ManualUserStatus; reason_code?: string; note?: string }, actorId: string): Promise<ManualUserStatusResponse> {
+    return this.repo.client().$transaction(async (tx) => {
+      const user = await this.repo.getManualUser(input.user_id, tx);
+      if (!user) {
+        throw new NotFoundException("manual user not found");
+      }
+
+      const storedStatus = this.toStoredStatus(input.status);
+      if (user.status === storedStatus) {
+        return this.statusResponse(user, input.status);
+      }
+
+      const updated = await this.repo.updateManualUserStatus(input.user_id, storedStatus, tx);
+      const after = {
+        ...this.statusAuditSnapshot(updated, input.status),
+        ...(input.reason_code ? { reason_code: input.reason_code } : {}),
+        ...(input.note ? { note: input.note } : {})
+      };
+      await this.audit.append({
+        actor_type: "ADMIN",
+        actor_id: actorId,
+        action: "MANUAL_USER_STATUS_UPDATE",
+        resource_type: "users_manual",
+        resource_id: updated.id,
+        before: this.statusAuditSnapshot(user, this.toExternalStatus(user.status)),
+        after
+      }, tx);
+      return this.statusResponse(updated, input.status);
+    });
   }
 
   private async applyLockedLedgerChange(type: "TOPUP" | "DEDUCT", input: { manual_user_id: string; amount: number; reason: string }, actorId: string, db: Prisma.TransactionClient) {
@@ -88,5 +130,32 @@ export class ManualCreditService {
   private safeUser(user: ManualUserRecord): Omit<ManualUserRecord, "password_hash"> {
     const { password_hash: _passwordHash, ...safe } = user;
     return safe;
+  }
+
+  private statusResponse(user: ManualUserRecord, status: ManualUserStatus = this.toExternalStatus(user.status)): ManualUserStatusResponse {
+    return {
+      user_manual_id: user.id,
+      username: user.username,
+      display_name: user.display_name,
+      status,
+      updated_at: user.updated_at
+    };
+  }
+
+  private statusAuditSnapshot(user: ManualUserRecord, status: ManualUserStatus) {
+    return {
+      user_manual_id: user.id,
+      username: user.username,
+      display_name: user.display_name,
+      status
+    };
+  }
+
+  private toStoredStatus(status: ManualUserStatus): StoredManualUserStatus {
+    return status === "ACTIVE" ? "ENABLED" : "DISABLED";
+  }
+
+  private toExternalStatus(status: StoredManualUserStatus): ManualUserStatus {
+    return status === "ENABLED" ? "ACTIVE" : "SUSPENDED";
   }
 }

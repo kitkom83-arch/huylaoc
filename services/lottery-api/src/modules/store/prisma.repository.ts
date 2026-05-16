@@ -74,8 +74,9 @@ export function mapManualUser(user: ManualUser): ManualUserRecord {
     username: user.username,
     display_name: user.display_name,
     password_hash: user.password_hash,
-    status: user.status as "ENABLED" | "DISABLED",
-    created_at: iso(user.created_at)
+    status: user.status as ManualUserRecord["status"],
+    created_at: iso(user.created_at),
+    updated_at: iso(user.updated_at)
   };
 }
 
@@ -228,6 +229,14 @@ export class PrismaRepository {
   async getManualUser(id: string, db: DbClient = this.prisma): Promise<ManualUserRecord | null> {
     const user = await db.manualUser.findUnique({ where: { id } });
     return user ? mapManualUser(user) : null;
+  }
+
+  async updateManualUserStatus(id: string, status: ManualUserRecord["status"], db: DbClient = this.prisma): Promise<ManualUserRecord> {
+    const user = await db.manualUser.update({
+      where: { id },
+      data: { status }
+    });
+    return mapManualUser(user);
   }
 
   async updateCreditAccountBalance(id: string, balance: number, db: DbClient): Promise<CreditAccountRecord> {

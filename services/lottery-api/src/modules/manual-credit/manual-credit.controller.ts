@@ -1,8 +1,19 @@
-import { Body, Controller, Get, Headers, Post } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Patch, Post } from "@nestjs/common";
 import { createManualUserSchema, manualCreditChangeSchema, type CreateManualUserDto, type ManualCreditChangeDto } from "@lottery/domain";
+import { z } from "zod";
 import { parseBody } from "../common/zod.js";
 import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { ManualCreditService } from "./manual-credit.service.js";
+
+const updateManualUserStatusSchema = z
+  .object({
+    status: z.enum(["ACTIVE", "SUSPENDED", "CLOSED"]),
+    reason_code: z.string().min(1).max(64).optional(),
+    note: z.string().min(1).max(512).optional()
+  })
+  .strict();
+
+type UpdateManualUserStatusDto = z.infer<typeof updateManualUserStatusSchema>;
 
 @Controller("/v1/admin/manual")
 export class ManualCreditController {
@@ -22,6 +33,12 @@ export class ManualCreditController {
       successStatus: 201,
       handler: (tx) => this.manual.createUser(dto, actorId, tx)
     });
+  }
+
+  @Patch("/users/:user_id/status")
+  updateUserStatus(@Param("user_id") userId: string, @Body() body: unknown, @Headers("x-admin-id") actorId: string) {
+    const dto: UpdateManualUserStatusDto = parseBody(updateManualUserStatusSchema, body);
+    return this.manual.updateUserStatus({ user_id: userId, ...dto }, actorId);
   }
 
   @Post("/credits/topup")
