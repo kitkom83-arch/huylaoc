@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Post } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post } from "@nestjs/common";
 import { postResultSchema, type PostResultDto } from "@lottery/domain";
 import { parseBody } from "../common/zod.js";
 import { IdempotencyService } from "../idempotency/idempotency.service.js";
@@ -27,5 +27,10 @@ export class ResultsController {
       successStatus: 201,
       handler: (tx) => this.results.post(dto, actorId, tx)
     });
+  }
+
+  @Get("/v1/admin/settlements/:job_id")
+  settlementJob(@Param("job_id") jobId: string) {
+    return this.results.getSettlementJob(jobId);
   }
 }

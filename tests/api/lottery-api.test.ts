@@ -2,7 +2,7 @@ import request from "supertest";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { createNestApp } from "../../services/lottery-api/dist/index.js";
-import { closeDatabase, resetDatabase } from "../helpers/database.js";
+import { closeDatabase, prisma, resetDatabase } from "../helpers/database.js";
 
 const adminHeaders = {
   "x-admin-id": "admin-test",
@@ -21,6 +21,43 @@ function roundBody(code: string) {
     draws_at: "2026-05-12T02:00:00.000Z",
     status: "OPEN"
   };
+}
+
+async function createSettlementJob() {
+  const round = await prisma.round.create({
+    data: {
+      round_code: "SETTLEMENT-READ",
+      status: "RESULT_POSTED",
+      opens_at: new Date("2026-05-12T01:00:00.000Z"),
+      closes_at: new Date("2026-05-12T02:00:00.000Z"),
+      draws_at: new Date("2026-05-12T02:00:00.000Z"),
+      paytable_snapshot: []
+    }
+  });
+
+  return prisma.settlementJob.create({
+    data: {
+      round_id: round.id,
+      status: "SUCCEEDED",
+      payload: {
+        tickets_total: 2,
+        tickets_done: 2,
+        winners_found: 1,
+        payouts_succeeded: 1,
+        payouts_failed: 0,
+        scanned_count: 1,
+        claimed_count: 1,
+        processed_count: 1,
+        succeeded_count: 1,
+        failed_count: 0,
+        unknown_count: 0,
+        retried_count: 0,
+        skipped_count: 0,
+        stale_recovered_count: 0,
+        secret: "must-not-return"
+      }
+    }
+  });
 }
 
 describe("lottery-api P0 foundation", () => {
@@ -166,6 +203,49 @@ describe("lottery-api P0 foundation", () => {
     const response = await request(app.getHttpServer()).post("/v1/admin/rounds").set(adminHeaders).send(roundBody("NO-IDEM"));
     expect(response.status).toBe(400);
     expect(response.body.error.message).toBe("Idempotency-Key header is required");
+  });
+
+  it("GET /v1/admin/settlements/:job_id requires admin header", async () => {
+    const job = await createSettlementJob();
+    const response = await request(app.getHttpServer()).get(`/v1/admin/settlements/${job.id}`);
+    expect(response.status).toBe(403);
+  });
+
+  it("GET /v1/admin/settlements/:job_id returns a safe settlement job status response", async () => {
+    const job = await createSettlementJob();
+    const response = await request(app.getHttpServer()).get(`/v1/admin/settlements/${job.id}`).set(adminHeaders);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      settlement_job_id: job.id,
+      round_id: job.round_id,
+      status: "SUCCEEDED",
+      progress_total: 2,
+      progress_done: 2,
+      winners_found: 1,
+      payouts_succeeded: 1,
+      payouts_failed: 0,
+      summary: {
+        scanned_count: 1,
+        claimed_count: 1,
+        processed_count: 1,
+        succeeded_count: 1,
+        failed_count: 0,
+        unknown_count: 0,
+        retried_count: 0,
+        skipped_count: 0,
+        stale_recovered_count: 0
+      },
+      created_at: expect.any(String),
+      updated_at: expect.any(String)
+    });
+    expect(JSON.stringify(response.body)).not.toContain("must-not-return");
+    expect(JSON.stringify(response.body)).not.toContain("secret");
+  });
+
+  it("GET /v1/admin/settlements/:job_id returns 404 for a missing settlement job", async () => {
+    const response = await request(app.getHttpServer()).get("/v1/admin/settlements/00000000-0000-0000-0000-000000000000").set(adminHeaders);
+    expect(response.status).toBe(404);
   });
 
   it("same Idempotency-Key and same body returns same response", async () => {
