@@ -1,6 +1,8 @@
 import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
+import { AuditLogController } from "./audit/audit-log.controller.js";
 import { AuditLogRepository } from "./audit/audit-log.repository.js";
+import { AuditLogService } from "./audit/audit-log.service.js";
 import { CatalogController } from "./catalog/catalog.controller.js";
 import { CatalogService } from "./catalog/catalog.service.js";
 import { AdminGuard } from "./common/admin.guard.js";
@@ -24,7 +26,7 @@ import { TicketsService } from "./tickets/tickets.service.js";
 
 @Module({
   imports: [PrismaModule],
-  controllers: [HealthController, DemoPagesController, CatalogController, RoundsController, ResultsController, ManualCreditController, TicketsController, OpsController],
+  controllers: [HealthController, DemoPagesController, CatalogController, RoundsController, ResultsController, ManualCreditController, AuditLogController, TicketsController, OpsController],
   providers: [
     PrismaRepository,
     CatalogService,
@@ -35,6 +37,7 @@ import { TicketsService } from "./tickets/tickets.service.js";
     OpsService,
     IdempotencyService,
     AuditLogRepository,
+    AuditLogService,
     CreditLedgerRepository,
     { provide: APP_GUARD, useClass: AdminGuard }
   ],

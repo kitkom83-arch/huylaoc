@@ -60,6 +60,30 @@ async function createSettlementJob() {
   });
 }
 
+async function createAuditLog(input: Partial<{
+  actor_type: string;
+  actor_id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  before: object;
+  after: object;
+  created_at: Date;
+}> = {}) {
+  return prisma.auditLog.create({
+    data: {
+      actor_type: input.actor_type ?? "ADMIN",
+      actor_id: input.actor_id ?? "admin-demo",
+      action: input.action ?? "MANUAL_TOPUP",
+      resource_type: input.resource_type ?? "credit_account",
+      resource_id: input.resource_id ?? "credit-account-1",
+      before: input.before,
+      after: input.after,
+      created_at: input.created_at
+    }
+  });
+}
+
 describe("lottery-api P0 foundation", () => {
   let app: NestFastifyApplication;
 
@@ -246,6 +270,75 @@ describe("lottery-api P0 foundation", () => {
   it("GET /v1/admin/settlements/:job_id returns 404 for a missing settlement job", async () => {
     const response = await request(app.getHttpServer()).get("/v1/admin/settlements/00000000-0000-0000-0000-000000000000").set(adminHeaders);
     expect(response.status).toBe(404);
+  });
+
+  it("GET /v1/admin/audit-logs requires admin header", async () => {
+    const response = await request(app.getHttpServer()).get("/v1/admin/audit-logs");
+    expect(response.status).toBe(403);
+  });
+
+  it("GET /v1/admin/audit-logs returns existing audit logs with an items array and action", async () => {
+    await createAuditLog({ action: "MANUAL_CREDIT_TOPUP" });
+    const response = await request(app.getHttpServer()).get("/v1/admin/audit-logs").set(adminHeaders);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      items: [
+        expect.objectContaining({
+          action: "MANUAL_CREDIT_TOPUP",
+          object_type: "credit_account",
+          object_id: "credit-account-1"
+        })
+      ],
+      limit: 20
+    });
+    expect(Array.isArray(response.body.items)).toBe(true);
+  });
+
+  it("GET /v1/admin/audit-logs supports limit query", async () => {
+    await createAuditLog({ action: "OLDER_AUDIT", created_at: new Date("2026-05-12T01:00:00.000Z") });
+    await createAuditLog({ action: "NEWER_AUDIT", created_at: new Date("2026-05-12T02:00:00.000Z") });
+    const response = await request(app.getHttpServer()).get("/v1/admin/audit-logs?limit=1").set(adminHeaders);
+
+    expect(response.status).toBe(200);
+    expect(response.body.limit).toBe(1);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].action).toBe("NEWER_AUDIT");
+  });
+
+  it("GET /v1/admin/audit-logs rejects invalid limit", async () => {
+    const response = await request(app.getHttpServer()).get("/v1/admin/audit-logs?limit=not-a-number").set(adminHeaders);
+    expect(response.status).toBe(400);
+  });
+
+  it("GET /v1/admin/audit-logs does not leak secret token or password fields", async () => {
+    await createAuditLog({
+      action: "SENSITIVE_AUDIT",
+      before: {
+        password: "must-not-return",
+        token: "must-not-return",
+        public_check_token: "must-not-return",
+        secret: "must-not-return"
+      },
+      after: {
+        password_hash: "must-not-return",
+        temporary_password: "must-not-return",
+        authorization: "must-not-return",
+        credential: "must-not-return",
+        api_key: "must-not-return"
+      }
+    });
+    const response = await request(app.getHttpServer()).get("/v1/admin/audit-logs").set(adminHeaders);
+
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(response.body)).not.toContain("must-not-return");
+    expect(JSON.stringify(response.body)).not.toContain("password");
+    expect(JSON.stringify(response.body)).not.toContain("token");
+    expect(JSON.stringify(response.body)).not.toContain("public_check_token");
+    expect(JSON.stringify(response.body)).not.toContain("secret");
+    expect(JSON.stringify(response.body)).not.toContain("authorization");
+    expect(JSON.stringify(response.body)).not.toContain("credential");
+    expect(JSON.stringify(response.body)).not.toContain("api_key");
   });
 
   it("same Idempotency-Key and same body returns same response", async () => {
