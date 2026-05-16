@@ -84,6 +84,14 @@ async function createAuditLog(input: Partial<{
   });
 }
 
+async function createManualUser(app: NestFastifyApplication, key = "api-status-user") {
+  return request(app.getHttpServer())
+    .post("/v1/admin/manual/users")
+    .set(adminHeaders)
+    .set(idempotency(key))
+    .send({ username: `user_${key}`, display_name: "Manual User", password: "strong-password" });
+}
+
 describe("lottery-api P0 foundation", () => {
   let app: NestFastifyApplication;
 
@@ -339,6 +347,81 @@ describe("lottery-api P0 foundation", () => {
     expect(JSON.stringify(response.body)).not.toContain("authorization");
     expect(JSON.stringify(response.body)).not.toContain("credential");
     expect(JSON.stringify(response.body)).not.toContain("api_key");
+  });
+
+  it("PATCH /v1/admin/manual/users/:user_id/status requires admin header", async () => {
+    const user = await createManualUser(app, "status-no-auth");
+    const response = await request(app.getHttpServer())
+      .patch(`/v1/admin/manual/users/${user.body.user.id}/status`)
+      .send({ status: "SUSPENDED", reason_code: "RISK_REVIEW", note: "temporary review" });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("PATCH /v1/admin/manual/users/:user_id/status suspends an existing manual user with a safe response", async () => {
+    const user = await createManualUser(app, "status-suspend");
+    const response = await request(app.getHttpServer())
+      .patch(`/v1/admin/manual/users/${user.body.user.id}/status`)
+      .set(adminHeaders)
+      .send({ status: "SUSPENDED", reason_code: "RISK_REVIEW", note: "ปิดชั่วคราวระหว่างตรวจสอบ" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      user_manual_id: user.body.user.id,
+      username: user.body.user.username,
+      display_name: user.body.user.display_name,
+      status: "SUSPENDED",
+      updated_at: expect.any(String)
+    });
+    expect(response.body.user_manual_id).toBe(user.body.user.id);
+    expect(response.body.status).toBe("SUSPENDED");
+    expect(response.body.password_hash).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toContain("password_hash");
+    await expect(prisma.manualUser.findUniqueOrThrow({ where: { id: user.body.user.id } }).then((record) => record.status)).resolves.toBe("DISABLED");
+    await expect(prisma.auditLog.count({ where: { action: "MANUAL_USER_STATUS_UPDATE", resource_id: user.body.user.id } })).resolves.toBe(1);
+
+    const sameStatus = await request(app.getHttpServer())
+      .patch(`/v1/admin/manual/users/${user.body.user.id}/status`)
+      .set(adminHeaders)
+      .send({ status: "SUSPENDED", reason_code: "RISK_REVIEW" });
+    expect(sameStatus.status).toBe(200);
+    expect(sameStatus.body.status).toBe("SUSPENDED");
+    await expect(prisma.auditLog.count({ where: { action: "MANUAL_USER_STATUS_UPDATE", resource_id: user.body.user.id } })).resolves.toBe(1);
+  });
+
+  it("PATCH /v1/admin/manual/users/:user_id/status rejects invalid status", async () => {
+    const user = await createManualUser(app, "status-invalid");
+    const response = await request(app.getHttpServer())
+      .patch(`/v1/admin/manual/users/${user.body.user.id}/status`)
+      .set(adminHeaders)
+      .send({ status: "DISABLED" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("PATCH /v1/admin/manual/users/:user_id/status returns 404 for a missing manual user", async () => {
+    const response = await request(app.getHttpServer())
+      .patch("/v1/admin/manual/users/00000000-0000-0000-0000-000000000000/status")
+      .set(adminHeaders)
+      .send({ status: "SUSPENDED" });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("PATCH /v1/admin/manual/users/:user_id/status rejects mass assignment fields", async () => {
+    const user = await createManualUser(app, "status-mass-assignment");
+    const response = await request(app.getHttpServer())
+      .patch(`/v1/admin/manual/users/${user.body.user.id}/status`)
+      .set(adminHeaders)
+      .send({
+        status: "CLOSED",
+        balance: 999999,
+        password_hash: "client-hash",
+        role: "admin"
+      });
+
+    expect(response.status).toBe(400);
+    await expect(prisma.manualUser.findUniqueOrThrow({ where: { id: user.body.user.id } }).then((record) => record.status)).resolves.toBe("ENABLED");
   });
 
   it("same Idempotency-Key and same body returns same response", async () => {

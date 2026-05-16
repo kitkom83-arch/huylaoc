@@ -27,6 +27,7 @@ export interface ManualUserRecord {
   password_hash: string;
   status: "ENABLED" | "DISABLED";
   created_at: string;
+  updated_at: string;
 }
 
 export interface CreditAccountRecord {
